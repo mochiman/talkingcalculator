@@ -224,21 +224,11 @@ wire Sample_Clk_Signal;
 //
 //
 
-wire Clock_22KHz;
+wire Clock_7200Hz;
 wire getNewData;
 wire [31:0] memData;
 wire pause, direction, resetCommand; // Commands from keyboard controller
 wire systemReset; // Reset the state machines
-
-// KEYBOARD CONTROL
-kbdController keyboardControl(
-  .clk                (ps2c), 
-  .reset              (systemReset), 
-  .command            (kbd_received_ascii_code), 
-  .resetCommand       (resetCommand), 
-  .pause              (pause), 
-  .direction          (direction)
-  );
 
 // Additional reset flipflop to synchronize timing with circuit
 vDFFE #(1) syncFF(CLK_50M, 1'b0, 1'b1, resetCommand, systemReset);
@@ -255,7 +245,7 @@ speedController speedControl(
 
 clockdivider32 clock22(
   .inClock    (CLK_50M), 
-  .outClock   (Clock_22KHz), 
+  .outClock   (Clock_7200Hz), 
   .divisor    (divisor)
 );
 
@@ -271,18 +261,6 @@ flashController memoryControl(
   .readDataValid  (flash_mem_readdatavalid), 
   .outData        (memData), 
   .direction      (direction)
-);
-
-// AUDIO CONTROLLER
-audioController audioControl(
-  .clk        (Clock_22KHz), 
-  .reset      (systemReset), 
-  .pause      (pause), 
-  .inData     (memData), 
-  .audioData  (audio_data), 
-  .finished   (getNewData), 
-  .direction  (direction), 
-  .address    (flash_mem_address)
 );
 
 
@@ -319,34 +297,91 @@ wire [7:0] audio_data; //= {~Sample_Clk_Signal,{7{Sample_Clk_Signal}}}; //genera
 
 //=======================================================================================================================
 //
-// LAB 3 CODE
+// LAB 4 CODE
 //
 //
 
-wire [23:0] sseg;                       
+wire [7:0] picoblaze_phoneme;                      
             
 picoblaze_template
 #(
 .clk_freq_in_hz(25000000)
 ) 
 picoblaze_template_inst(
-  .led              (LED[9:2]),
-  .clk              (CLK_50M),
-  .input_data       (audio_data),
-  .sseg             (sseg),
-  .interrupt_signal (interrupt_signal)
+  .phoneme_selection              (picoblaze_phoneme),
+  .clk                            (CLK_50M),
+  .input_data                     (keyboard_commmand),
+  .fsm_finish_signal              (synced_finish),
+  .fsm_start_signal               (audio_controller_start),
+  .reset_edge_trap                (reset_edge_trap),
+  .interrupt_signal               (interrupt_signal)
 );
 
+assign LED[7:0] = picoblaze_phoneme;
+assign LED[8] = synced_finish;
+assign LED[9] = audio_controller_finish;
+
 // Use sseg signal from picoblaze for LED output, first bit
-assign LED[0] = sseg[0];
+// assign LED[0] = sseg[0];
 
 // Interrupt signal control
 // Exists for one 50Mhz clock pulse 
-wire start_signal, interrupt_signal;
+wire interrupt_signal;
+wire special_reset;
+assign special_reset = SW[1];
+single_pulse_edgeTrap interruptTrap(CLOCK_50, SW[0], interrupt_signal);
 
-vDFFE #(1) startSignal(getNewData, interrupt_signal, 1'b1, 1'b1, start_signal);
-vDFFE #(1) interruptSignal(CLK_50M, 1'b0, 1'b1, start_signal, interrupt_signal);
+//vDFFE #(1) startSignal(ps2c, interrupt_signal, 1'b1, 1'b1, start_signal);
+//vDFFE #(1) interruptSignal(CLK_50M, 1'b0, 1'b1, start_signal, interrupt_signal);
 
+// KEYBOARD CONTROL
+/*
+kbdController keyboardControl(
+  .clk                (ps2c), 
+  .reset              (systemReset), 
+  .command            (kbd_received_ascii_code), 
+  .resetCommand       (resetCommand), 
+  .pause              (pause), 
+  .direction          (direction)
+  );
+*/
+// FF to store keyboard command
+wire [7:0] keyboard_commmand;
+vDFFE #(8) keyboardFF(ps2c, 1'b0, 1'b1, kbd_received_ascii_code, keyboard_commmand);
+
+// AUDIO CONTROLLER
+wire silent;
+wire audio_controller_start, audio_controller_finish;
+wire [23:0] audio_start_address, audio_end_address;
+
+audioController audioControl(
+  .clk            (Clock_7200Hz), 
+  .reset          (special_reset), 
+  .inData         (memData), 
+  .audioData      (audio_data), 
+  .getNewData     (getNewData), 
+  .address        (flash_mem_address),
+  .start_address  (audio_start_address),//(audio_start_address),
+  .end_address    (audio_end_address),//(audio_end_address),
+  .silent         (silent),
+  .start          (audio_controller_start || SW[4]),//(audio_controller_start),
+  .finish         (audio_controller_finish)
+);
+
+// Edge trap
+wire trapped_finish, synced_finish, reset_edge_trap;
+vDFFE finish_signal_edgeTrap1(audio_controller_finish, reset_edge_trap, 1'b1, 1'b1, trapped_finish);
+vDFFE finish_signal_edgeTrap2(CLK_50M, reset_edge_trap, 1'b1, trapped_finish, synced_finish);
+
+// NARRATOR CONTROLLER
+narrator_ctrl phonemeSelector
+  (
+  .clk            (CLK_50M),
+  .phoneme_sel    (picoblaze_phoneme),
+  .start_address  (audio_start_address),
+  .end_address    (audio_end_address),
+  .silent         (silent)
+  );
 
 //======================================================================================
 // 
@@ -460,7 +495,7 @@ Generate_LCD_scope_Clk(
 (* keep = 1, preserve = 1 *) logic ScopeChannelASignal;
 (* keep = 1, preserve = 1 *) logic ScopeChannelBSignal;
 
-assign ScopeChannelASignal = Clock_22KHz;
+assign ScopeChannelASignal = Clock_7200Hz;
 assign ScopeChannelBSignal = speed_up_event;
 //Scope capture channels
 

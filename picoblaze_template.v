@@ -6,10 +6,12 @@ picoblaze_template
 #(
 parameter clk_freq_in_hz = 25000000
 ) (
-				output reg[7:0] led,
+				output reg [7:0] phoneme_selection,
 				input clk,
 				input [7:0] input_data,
-			  output wire [23:0] sseg,
+        input fsm_finish_signal,
+        output reg fsm_start_signal,
+        output reg reset_edge_trap,
         input interrupt_signal
 			     );
 
@@ -127,6 +129,7 @@ pacoblaze3 led_8seg_kcpsm
  begin
     case (port_id[7:0])
         8'h0:    in_port <= input_data;
+        8'h20:   in_port <= {7'd0, fsm_finish_signal}; // Port 20 hex
         default: in_port <= 8'bx;
     endcase
 end
@@ -144,20 +147,22 @@ end
   begin
 
         //port 80 hex 
+        // Phonememe
         if (write_strobe & port_id[7])  //clock enable 
-          led <= out_port;
+          phoneme_selection <= out_port;
 
         //port 40 hex 
-        if (write_strobe & port_id[6])  //clock enable 
-          sseg[7:0] <= out_port;
+        //if (write_strobe & port_id[6])  //clock enable 
+          //sseg[7:0] <= out_port;
 			      
 		  //port 20 hex 
-		  if (write_strobe & port_id[5])  //clock enable 
-          sseg[15:8] <= out_port;
+      // FSM finish signal
+		  if (write_strobe & port_id[6])  //clock enable 
+        {reset_edge_trap, fsm_start_signal} <= out_port[1:0];
 			      
 		  //port 10 hex 			
-        if (write_strobe & port_id[4])  //clock enable 
-          sseg[23:16] <= out_port;
+        //if (write_strobe & port_id[4])  //clock enable 
+        //sseg[23:16] <= out_port;
 			      
   end
 

@@ -88,67 +88,101 @@ endmodule
 // Takes 32-bit audio data and samples 4 times
 // finished is fed into FSM to tell it to retrieve new data after 
 // all data has been parsed
-module audioController(clk, reset, pause, inData, audioData, finished, direction, address);
-    input logic clk, reset, pause;
-    input logic [32:0] inData;
+// audio_data =  inData[(current_address %4) * 4 + 4:(current_address %4) * 4]
+// start command from pico, finish sent to pico
+// pico controlls pretty much
+module audioController(clk, reset, inData, audioData, getNewData, address, start_address, end_address, silent, start, finish);
+    input logic clk, reset;
+    input logic [31:0] inData;
     output logic [7:0] audioData;
-    output logic finished;
-    input logic direction;
-    output logic [22:0] address;
+    output logic getNewData;
+    output logic [23:0] address;
+    input logic [23:0] start_address, end_address;
+    input logic silent;
+    input logic start;
+    output logic finish;
 
-    parameter state1 = 2'b11;
-    parameter state2 = 2'b01;
-    parameter state3 = 2'b10;
-    parameter state4 = 2'b00;
+    parameter state1 = 1'b0;
+    parameter state2 = 1'b1;
 
     // ADDRESS CONTROL LOGIC
-    logic enable_pc;
-    logic [22:0] pc, next_pc;
-    counter #(.width(23), .increment(1), .min(0), .max('h7FFFF)) programCounter(direction, pc, next_pc);
+    logic enable_address;
+    logic [23:0] current_address, next_address; // current_address counts byte addresses
 
-    vDFFE #(23) counterFF(clk, reset, enable_pc, next_pc, pc);
-    assign address = pc;
+    vDFFE #(24) addressFF(clk, reset, 1'b1, next_address, current_address);
+
+    // SYNCRONIZATION LOGIC
+    // Sync the start signal
+    logic synced_start;
+    single_pulse_edgeTrap startTrap(clk, start, synced_start);
+
+    // ADDRESSING LOGIC
+    logic [23:0] word_address;
+    logic [1:0]  memory_position; //, high_address, low_address; 
+    // word_address is the address used to access the byte position in flash data
+    assign word_address = current_address / 24'd4;
+    //assign address = word_address;
+
+    // memory position is the current byte position in memory eg. 0-3 for 4 samples in each 32-bit word
+    assign memory_position = current_address % 24'd4;
+
+    // MEMORY LOGIC
+    // save value of inData only on clock pulse to sync with audio controller
+    logic [31:0] saved_audio_data;
+    logic load_audio_data;
+    vDFFE #(32) audio_data_ff(clk, reset, load_audio_data, inData, saved_audio_data);
 
     // STATE LOGIC
-    logic [1:0] current_state, next_state, next_state_reset;
-    vDFFE #(2) stateFF(clk, 1'b0, pause, next_state_reset, current_state);
-
-    assign next_state_reset = reset ? state4 : next_state;
+    logic current_state, next_state;
+    vDFFE #(1) stateFF(clk, reset, 1'b1, next_state, current_state);
 
     always_comb begin
-        finished = 1'b0; audioData = 8'bx; next_state = 2'bxx; enable_pc = 1'b0;
+        next_state = current_state; 
+        getNewData = 1'b0;     
+        finish = 1'b0;
+        load_audio_data = 1'b0;
+        address = word_address;
 
         case (current_state) 
             state1: begin
-                enable_pc = 1'b1;
-                next_state = state2;
-                if (direction) audioData = inData[31:24];
-                else audioData = inData[7:0];
+                audioData = 8'd0;
+                finish = 1'b1;
+                next_address = start_address;                
+                if (synced_start) begin 
+                    next_state = state2;
+                    getNewData = 1'b1; // Load new audio data from player
+                    load_audio_data = 1'b1;
+                end
             end
 
             state2: begin
-                next_state = state3;
-                if (direction) audioData = inData[23:16];
-                else audioData = inData[15:8];
+                // Memory to read depends on byte 
+
+                if (silent) audioData = 8'd0;
+                else case (memory_position)
+                    2'd0:   audioData = saved_audio_data[7:0];
+                    2'd1:   audioData = saved_audio_data[15:8];
+                    2'd2:   audioData = saved_audio_data[23:16];
+                    2'd3:   audioData = saved_audio_data[31:24];
+                    default: audioData = 8'bx;
+                endcase
+                next_address = current_address + 24'd1;
+
+                // If were at the last address, finish
+                if (current_address == end_address) next_state = state1;
+
+                // Otherwise if were at the last byte, read new flash data
+                else if (memory_position == 3) begin 
+                    address = word_address + 24'd1;
+                    getNewData = 1'b1;
+                    load_audio_data = 1'b1;
+                end
             end
 
-            state3: begin
-                if (direction) audioData = inData[15:8];
-                else audioData = inData[23:16];
-                next_state = state4;
+            default: begin
+            next_address = 24'bx;
+            next_state = state1;
             end
-
-            state4: begin
-                if (direction) audioData = inData[7:0];
-                else audioData = inData[31:24];
-                finished = 1'b1;
-                next_state = state1;
-            end
-
-            default: begin 
-                finished = 1'b0; audioData = 8'bx; next_state = 2'bxx; enable_pc = 1'b0;
-            end
-
         endcase
     end
 endmodule
@@ -211,7 +245,7 @@ endmodule
 
 // Increases or decreases frequency divider divisor based on speeding up, down, or reset
 module speedController(clk, speedUp, speedDown, reset, currentSpeed);
-    parameter defaultSpeed = 32'd1136;
+    parameter defaultSpeed = 32'd6944; // 7200hz
     parameter speedFactor = 32'd10;
 
     input logic clk, speedUp, speedDown, reset;
@@ -224,69 +258,6 @@ module speedController(clk, speedUp, speedDown, reset, currentSpeed);
             currentSpeed <= currentSpeed + speedFactor;
         else if (speedDown)
             currentSpeed <= currentSpeed - speedFactor;
-    end
-
-endmodule
-
-module counter(controlPC, current_pc, next_pc);
-    parameter width = 32;
-    parameter increment = 'd1;
-    parameter min = 'd0;
-    parameter max = 'h7FFFF;
-
-    input logic controlPC; // First bit for reset, second bit for direction
-    input logic [width-1:0] current_pc;
-    output logic [width-1:0] next_pc;
-
-    always_comb begin
-        case (controlPC)
-            1'b0: begin
-                if (current_pc == max) next_pc = min;
-                else next_pc = current_pc + increment;
-            end
-            1'b1: begin
-                if (current_pc == min) next_pc = max;
-                else next_pc = current_pc - increment;
-            end
-            default: next_pc = current_pc;
-        endcase
-    end
-endmodule
-
-module vDFFE(clk, reset, enable, d, q);
-    parameter width = 8;
-    parameter startValue = 0;
-    
-    input logic clk, enable, reset;
-    input logic [width-1:0] d;
-    output logic [width-1:0] q = startValue;
-
-    logic [width-1:0] dataSelector;
-
-    assign dataSelector = enable ? d : q;
-
-    always_ff @(posedge clk or posedge reset) begin
-        if (reset) q <= 0;
-        else q <= dataSelector;
-    end
-endmodule
-
-
-// Clock divider, outClock will be the inClock divided by the divisor
-// 32 bit divisor
-module clockdivider32(inClock, outClock, divisor);
-    input logic inClock;
-    output logic outClock;
-    input logic [31:0] divisor;
-
-    logic [31:0] counter = 32'd0;
-
-    always_ff @(posedge inClock) begin
-        counter <= counter + 32'd1;
-        if (counter >= (divisor - 1))
-            counter <= 32'd0;
-
-        outClock <= (counter < divisor / 2) ? 1'b1 : 1'b0;
     end
 
 endmodule
