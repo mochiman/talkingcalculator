@@ -310,7 +310,7 @@ picoblaze_template
 picoblaze_template_inst(
   .phoneme_selection              (picoblaze_phoneme),
   .clk                            (CLK_50M),
-  .input_data                     (keyboard_commmand),
+  .input_data                     (kbd_received_ascii_code),
   .pico_start_signal              (pico_start),
   .fsm_finish_signal              (synced_finish),
   .fsm_start_signal               (audio_controller_start),
@@ -347,9 +347,6 @@ kbdController keyboardControl(
   .direction          (direction)
   );
 */
-// FF to store keyboard command
-wire [7:0] keyboard_commmand;
-vDFFE #(8) keyboardFF(ps2c, 1'b0, 1'b1, kbd_received_ascii_code, keyboard_commmand);
 
 // AUDIO CONTROLLER
 wire silent;
@@ -375,7 +372,7 @@ wire trapped_finish, synced_finish, reset_edge_trap;
 edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
 
 wire pico_finish, pico_start;
-edge_trap pico_start_char(CLK_50M, pico_finish, ps2c, pico_start);
+edge_trap pico_start_char(CLK_50M, pico_finish, kbd_data_ready, pico_start);
 //vDFFE finish_signal_edgeTrap1(audio_controller_finish, reset_edge_trap, 1'b1, 1'b1, trapped_finish);
 //vDFFE finish_signal_edgeTrap2(CLK_50M, reset_edge_trap, 1'b1, trapped_finish, synced_finish);
 

@@ -21,11 +21,6 @@ CONSTANT SSEG_PORT2, 10
 ;**************************************************************************************
 ;
 ;
-CONSTANT ISR_preserve_s0, 00        ;Preserve s0 contents during ISR
-CONSTANT ISR_preserve_s1, 01        ;Preserve s1 contents during ISR
-CONSTANT ISR_preserve_s2, 02        ;Preserve s2 contents during ISR
-CONSTANT ISR_preserve_s3, 03        ;Preserve s3 contents during ISR
-;
 CONSTANT NUM1, 04                    ; 1st number
 CONSTANT NUM2, 05                    ; 2nd number
 CONSTANT OPERATOR, 06                ; Operator (+ or -) (0 or 1)
@@ -214,7 +209,6 @@ cold_start: LOAD s0, 00                         ;clear 1 second counter and clea
 			OUTPUT s0, FSM_OUT_PORT
 			OUTPUT s0, PHONEME_OUT_PORT
 			;
-			; ENABLE INTERRUPT                    ;enable one second heart beat
 		
 ;**************************************************************************************
 ; Main program
@@ -222,22 +216,110 @@ cold_start: LOAD s0, 00                         ;clear 1 second counter and clea
 ;
 ; Display welcome message for design
 ;
+
+; case (step)
+; 0: num1 = input
+; 1: operator = input
+; 2: num2 = input
+; 3: output result
+
+; s0 = ASCII input
+; s1 = NUM1		(0-9)
+; s2 = NUM2		(0-9)
+; s3 = Operator (+/-)
+; s4 = Step 	(0-3)(which step of the calc were on)
 			
 main_program: 
 	; polling
 	INPUT s0, FSM_IN_PORT
 	TEST s0, 02
 	JUMP Z, main_program
-	CALL talkword0
-	CALL talkword1
 
-	; Reset trap for ps2 clk
+	; We've recieved a character, process it
+	; Output audio data of character
+	INPUT s0, ASCII_IN_PORT
+	SUB s0, 30 ; Convert ascii to num
+	CALL numberToSpeech
+
+finish:
+	; Reset trap for start signal
 	LOAD s0, 04
 	OUTPUT s0, FSM_OUT_PORT
 	LOAD s0, 00
 	OUTPUT s0, FSM_OUT_PORT
 
 	JUMP main_program       ; Main loop	
+
+numberToSpeech:
+; s0 = which number converted from ascii
+; tried making a jump table but label address can't be accessed with an offset
+	COMPARE s0, 00
+	JUMP Z, LABEL_0
+	COMPARE s0, 01
+	JUMP Z, LABEL_1
+	COMPARE s0, 02
+	JUMP Z, LABEL_2
+	COMPARE s0, 03
+	JUMP Z, LABEL_3
+	COMPARE s0, 04
+	JUMP Z, LABEL_4
+	COMPARE s0, 05
+	JUMP Z, LABEL_5
+	COMPARE s0, 06
+	JUMP Z, LABEL_6
+	COMPARE s0, 07
+	JUMP Z, LABEL_7
+	COMPARE s0, 08
+	JUMP Z, LABEL_8
+	COMPARE s0, 09
+	JUMP Z, LABEL_9
+
+	JUMP LABEL_DEFAULT
+
+; Table
+LABEL_0:
+	CALL talkword0
+	RETURN
+LABEL_1:
+	CALL talkword1
+	RETURN
+LABEL_2:
+	CALL talkword2
+	RETURN
+LABEL_3:
+	CALL talkword3
+	RETURN
+LABEL_4:
+	CALL talkword4
+	RETURN
+LABEL_5:
+	CALL talkword5
+	RETURN
+LABEL_6:
+	CALL talkword6
+	RETURN
+LABEL_7:
+	CALL talkword7
+	RETURN
+LABEL_8:
+	CALL talkword8
+	RETURN
+LABEL_9:
+	CALL talkword9
+	RETURN
+LABEL_plus:
+	CALL talkword0
+	RETURN
+LABEL_minus:
+	CALL talkword0
+	RETURN
+LABEL_error:
+	CALL talkword0
+	RETURN
+LABEL_DEFAULT:
+	CALL talkworddepth
+	RETURN
+
 
 ;;============================================================================
 ;; Test message and phoneme voicing subroutine.
@@ -558,6 +640,18 @@ talkwordposition:
 	call	talkphonemeNN1
 	JUMP	endword
 
+;
+;
+;
+;**************************************************************************************
+; Custom Words
+;**************************************************************************************
+;
+;
+;
+
+
+
 endword:
 	call	talkphonemePA5
 	return
@@ -783,115 +877,3 @@ talkphonemePA6:			; 500 mS silence
       call talkphonemePA5
       call talkphonemePA4
 	JUMP	say_phoneme
-
-	;
-	;
-	;
-	;**************************************************************************************
-	; Jump Table
-	;**************************************************************************************
-	;
-	;
-	;
-;jump_table:
-;	LABEL_0
-;	LABEL_1
-	;LABEL_2
-	;LABEL_3
-	;LABEL_4
-	;LABEL_5
-	;LABEL_6
-	;LABEL_7
-	;LABEL_8
-	;LABEL_9
-	;LABEL_minus
-	;LABEL_plus
-
-
-LABEL_0:
-	CALL talkword0
-	JUMP endCase
-LABEL_1:
-	CALL talkword1
-	JUMP endCase
-LABEL_2:
-	CALL talkword2
-	JUMP endCase
-LABEL_3:
-	CALL talkword3
-	JUMP endCase
-LABEL_4:
-	CALL talkword4
-	JUMP endCase
-LABEL_5:
-	CALL talkword5
-	JUMP endCase
-LABEL_6:
-	CALL talkword6
-	JUMP endCase
-LABEL_7:
-	CALL talkword7
-	JUMP endCase
-LABEL_8:
-	CALL talkword8
-	JUMP endCase
-LABEL_9:
-	CALL talkword9
-	JUMP endCase
-LABEL_plus:
-	CALL talkword0
-	JUMP endCase
-LABEL_minus:
-	CALL talkword0
-
-endCase:
-	RETURN
-
-
-	;
-	;
-	;
-	;**************************************************************************************
-	; Interrupt Service Routine (ISR)
-	;**************************************************************************************
-	;
-	;
-	;
-ISR: 
-	;STORE s0, ISR_preserve_s0           ;preserve register s0
-	;STORE s1, ISR_preserve_s1           ;preserve register s1
-	;STORE s2, ISR_preserve_s2           ;preserve register s2
-	;STORE s3, ISR_preserve_s3           ;preserve register s3
-
-	; Load registers with values
-	;INPUT s0, ASCII_IN_PORT             ;store audio data into s0
-	;FETCH s1, SUM0                      ;1st 8 bits of sum into s1
-	;FETCH s2, SUM1                      ;2nd 8 bits of sum into s2
-	;FETCH s3, SUM_COUNTER               ;Fetch the counter
-	CALL LABEL_0
-	CALL LABEL_1
-	
-
-
-			
-finish:        
-	;STORE s1, SUM0                      ;1st 8 bits of s1 into sum
-	;STORE s2, SUM1                      ;2nd 8 bits of s1 into sum
-	;STORE s3, SUM_COUNTER
-
-	; Restore registers and exit
-	;FETCH s0, ISR_preserve_s0          
-	;FETCH s1, ISR_preserve_s1          
-	;FETCH s2, ISR_preserve_s2           
-	;FETCH s3, ISR_preserve_s3          
-	RETURNI ENABLE
-;
-;
-;**************************************************************************************
-; Interrupt Vector
-;**************************************************************************************
-;
-ADDRESS 3FF
-JUMP ISR
-;
-;
