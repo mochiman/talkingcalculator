@@ -6,8 +6,8 @@
 ;
 CONSTANT PHONEME_OUT_PORT, 80               ; Output of phoneme code 
 CONSTANT ASCII_IN_PORT, 00	        		; Input data of phoneme from keyboard
-CONSTANT FSM_START_PORT, 40
-CONSTANT FSM_FINISH_PORT, 20
+CONSTANT FSM_OUT_PORT, 40 ; 1st bit is audio_ctrl start, 2nd bit is reset_edge_trap (for finish), 3rd bit is pico finish signal
+CONSTANT FSM_IN_PORT, 20 ; 1st bit is audio_ctrl finish, 2nd bit is pico_start
 CONSTANT SSEG_PORT2, 10
 
 ;**************************************************************************************
@@ -211,10 +211,10 @@ cold_start: LOAD s0, 00                         ;clear 1 second counter and clea
 			STORE s0, NUM2
 			STORE s0, OPERATOR
 			STORE s0, STEP
-			OUTPUT s0, FSM_START_PORT
+			OUTPUT s0, FSM_OUT_PORT
 			OUTPUT s0, PHONEME_OUT_PORT
 			;
-			ENABLE INTERRUPT                    ;enable one second heart beat
+			; ENABLE INTERRUPT                    ;enable one second heart beat
 		
 ;**************************************************************************************
 ; Main program
@@ -224,9 +224,20 @@ cold_start: LOAD s0, 00                         ;clear 1 second counter and clea
 ;
 			
 main_program: 
+	; polling
+	INPUT s0, FSM_IN_PORT
+	TEST s0, 02
+	JUMP Z, main_program
+	CALL talkword0
+	CALL talkword1
 
-CALL talkworddepth
-JUMP main_program       ; Main loop	
+	; Reset trap for ps2 clk
+	LOAD s0, 04
+	OUTPUT s0, FSM_OUT_PORT
+	LOAD s0, 00
+	OUTPUT s0, FSM_OUT_PORT
+
+	JUMP main_program       ; Main loop	
 
 ;;============================================================================
 ;; Test message and phoneme voicing subroutine.
@@ -556,28 +567,20 @@ endword:
 				OUTPUT s0, PHONEME_OUT_PORT 
 
 				; reset finish edge_trap
-				LOAD s0, 02;
-				OUTPUT s0, FSM_START_PORT
-
 				; Start audio FSM
-				LOAD s0, 01 
-				OUTPUT s0, FSM_START_PORT 
+
+				LOAD s0, 03 
+				OUTPUT s0, FSM_OUT_PORT 
 
 				; Reset start signal
 				LOAD s0, 00 
-				OUTPUT s0, FSM_START_PORT 
+				OUTPUT s0, FSM_OUT_PORT 
 	
 	; loop until finished
 	waitForAudio: 
-				INPUT s0, FSM_FINISH_PORT
+				INPUT s0, FSM_IN_PORT
 				TEST s0, 01 ; Check first bit
 				JUMP Z, waitForAudio ; if zero, bit is not set and repeat loop
-
-				; reset edge trap
-				LOAD s0, 02
-				OUTPUT s0, FSM_START_PORT 
-				LOAD s0, 00
-				OUTPUT s0, FSM_START_PORT 
  	 
                 RETURN
 
@@ -807,28 +810,42 @@ talkphonemePA6:			; 500 mS silence
 
 LABEL_0:
 	CALL talkword0
+	JUMP endCase
 LABEL_1:
 	CALL talkword1
+	JUMP endCase
 LABEL_2:
 	CALL talkword2
+	JUMP endCase
 LABEL_3:
 	CALL talkword3
+	JUMP endCase
 LABEL_4:
 	CALL talkword4
+	JUMP endCase
 LABEL_5:
 	CALL talkword5
+	JUMP endCase
 LABEL_6:
 	CALL talkword6
+	JUMP endCase
 LABEL_7:
 	CALL talkword7
+	JUMP endCase
 LABEL_8:
 	CALL talkword8
+	JUMP endCase
 LABEL_9:
 	CALL talkword9
+	JUMP endCase
 LABEL_plus:
 	CALL talkword0
+	JUMP endCase
 LABEL_minus:
 	CALL talkword0
+
+endCase:
+	RETURN
 
 
 	;
@@ -841,17 +858,18 @@ LABEL_minus:
 	;
 	;
 ISR: 
-	STORE s0, ISR_preserve_s0           ;preserve register s0
-	STORE s1, ISR_preserve_s1           ;preserve register s1
-	STORE s2, ISR_preserve_s2           ;preserve register s2
-	STORE s3, ISR_preserve_s3           ;preserve register s3
+	;STORE s0, ISR_preserve_s0           ;preserve register s0
+	;STORE s1, ISR_preserve_s1           ;preserve register s1
+	;STORE s2, ISR_preserve_s2           ;preserve register s2
+	;STORE s3, ISR_preserve_s3           ;preserve register s3
 
 	; Load registers with values
-	INPUT s0, ASCII_IN_PORT             ;store audio data into s0
+	;INPUT s0, ASCII_IN_PORT             ;store audio data into s0
 	;FETCH s1, SUM0                      ;1st 8 bits of sum into s1
 	;FETCH s2, SUM1                      ;2nd 8 bits of sum into s2
 	;FETCH s3, SUM_COUNTER               ;Fetch the counter
-	CALL talkword0
+	CALL LABEL_0
+	CALL LABEL_1
 	
 
 
@@ -862,10 +880,10 @@ finish:
 	;STORE s3, SUM_COUNTER
 
 	; Restore registers and exit
-	FETCH s0, ISR_preserve_s0          
-	FETCH s1, ISR_preserve_s1          
-	FETCH s2, ISR_preserve_s2           
-	FETCH s3, ISR_preserve_s3          
+	;FETCH s0, ISR_preserve_s0          
+	;FETCH s1, ISR_preserve_s1          
+	;FETCH s2, ISR_preserve_s2           
+	;FETCH s3, ISR_preserve_s3          
 	RETURNI ENABLE
 ;
 ;
