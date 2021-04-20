@@ -21,10 +21,8 @@ CONSTANT SSEG_PORT2, 10
 ;**************************************************************************************
 ;
 ;
-CONSTANT NUM1, 04                    ; 1st number
-CONSTANT NUM2, 05                    ; 2nd number
-CONSTANT OPERATOR, 06                ; Operator (+ or -) (0 or 1)
-CONSTANT STEP, 06             		 ; Step of math operation
+CONSTANT SAVED_ASCII, 04                    ; 1st number
+CONSTANT SAVED_NUM, 05                    ; 2nd number
 
 ;; Define constants for all the ascii values.
 
@@ -202,10 +200,8 @@ CONSTANT phoneme_BB2      , 3F    ; phoneme code
 ;;============================================================================
 
 cold_start: LOAD s0, 00                         ;clear 1 second counter and clear scratch memory
-			STORE s0, NUM1
-			STORE s0, NUM2
-			STORE s0, OPERATOR
-			STORE s0, STEP
+			STORE s0, SAVED_NUM
+			STORE s0, SAVED_ASCII
 			OUTPUT s0, FSM_OUT_PORT
 			OUTPUT s0, PHONEME_OUT_PORT
 			;
@@ -223,7 +219,7 @@ cold_start: LOAD s0, 00                         ;clear 1 second counter and clea
 ; 2: num2 = input
 ; 3: output result
 
-; s0 = ASCII input
+; s0 = ASCII input, operations
 ; s1 = NUM1		(0-9)
 ; s2 = NUM2		(0-9)
 ; s3 = Operator (+/-)
@@ -238,8 +234,27 @@ main_program:
 	; We've recieved a character, process it
 	; Output audio data of character
 	INPUT s0, ASCII_IN_PORT
+	STORE s0, SAVED_ASCII
 	SUB s0, 30 ; Convert ascii to num
-	CALL numberToSpeech
+	STORE s0, SAVED_NUM
+
+	COMPARE s4, 00
+	JUMP Z, step1
+	COMPARE s4, 01
+	JUMP Z, step2
+	COMPARE s4, 02
+	JUMP Z, step3
+	COMPARE s4, 03
+	JUMP Z, step4
+
+	JUMP error ; should not be able to get here
+
+increment_step:
+	ADD s4, 01
+	JUMP finish
+
+error:
+	CALL talkworderror
 
 finish:
 	; Reset trap for start signal
@@ -250,76 +265,159 @@ finish:
 
 	JUMP main_program       ; Main loop	
 
+
+step1:
+	CALL checkValidNum
+	COMPARE s0, 01 ; Check if valid, error out if invalid
+	JUMP NZ, error
+	; number is valid, store into ram
+	FETCH s1, SAVED_NUM
+	LOAD s0, s1
+	CALL numberToSpeech
+	JUMP increment_step
+
+step2:
+	CALL checkValidOperator
+	COMPARE s0, 01 ; Check if valid, error out if invalid
+	JUMP NZ, error
+	; number is valid, store into ram
+	FETCH s3, SAVED_ASCII
+	LOAD s0, s3
+	CALL asciiToSpeech
+	JUMP increment_step
+
+step3:
+	CALL checkValidNum
+	COMPARE s0, 01 ; Check if valid, error out if invalid
+	JUMP NZ, error
+	; number is valid, store into ram
+	FETCH s2, SAVED_NUM
+	LOAD s0, s2
+	CALL numberToSpeech
+	JUMP increment_step
+
+step4:
+	; Must be equal operator
+	FETCH s0, SAVED_ASCII
+	COMPARE s0, 3D ; Check if valid, error out if invalid
+	JUMP NZ, error
+	; number is valid, store into ram
+	CALL talkwordequals
+	
+	; perform math operation
+	CALL mathOperation
+	CALL numberToSpeech
+	; Reset to step 1
+	LOAD s4, 00
+	JUMP finish
+
+
+;**************************************************************************************
+; Functions
+;**************************************************************************************
+;
+; Various functions, if there is a return value it's stored in s0
+;
+
+
+
+; checks if input is valid 0-9
+; s0 is 0 for invalid, 1 for valid
+checkValidNum:
+	FETCH s0, SAVED_NUM
+	COMPARE s0, 00 ; num >= 0
+	JUMP C, invalidNum
+	COMPARE s0, 0A ; num < 10 == num <= 9
+	JUMP NC, invalidNum
+	LOAD s0, 01
+	RETURN
+
+; Checks ascii + or -
+invalidNum:
+	LOAD s0, 00
+	RETURN
+
+; checks if input is valid + or -
+checkValidOperator:
+	FETCH s0, SAVED_ASCII
+	COMPARE s0, 2B ; +
+	JUMP Z, validOperator
+	COMPARE s0, 2D ; -
+	JUMP Z, validOperator
+	LOAD s0, 00
+	RETURN
+
+validOperator:
+	LOAD s0, 01
+	RETURN
+
 numberToSpeech:
-; s0 = which number converted from ascii
+; s0 = which number 
 ; tried making a jump table but label address can't be accessed with an offset
 	COMPARE s0, 00
-	JUMP Z, LABEL_0
+	JUMP Z, talkword0
 	COMPARE s0, 01
-	JUMP Z, LABEL_1
+	JUMP Z, talkword1
 	COMPARE s0, 02
-	JUMP Z, LABEL_2
+	JUMP Z, talkword2
 	COMPARE s0, 03
-	JUMP Z, LABEL_3
+	JUMP Z, talkword3
 	COMPARE s0, 04
-	JUMP Z, LABEL_4
+	JUMP Z, talkword4
 	COMPARE s0, 05
-	JUMP Z, LABEL_5
+	JUMP Z, talkword5
 	COMPARE s0, 06
-	JUMP Z, LABEL_6
+	JUMP Z, talkword6
 	COMPARE s0, 07
-	JUMP Z, LABEL_7
+	JUMP Z, talkword7
 	COMPARE s0, 08
-	JUMP Z, LABEL_8
+	JUMP Z, talkword8
 	COMPARE s0, 09
-	JUMP Z, LABEL_9
+	JUMP Z, talkword9
+	COMPARE s0, 0A
+	JUMP Z, talkword10
+	COMPARE s0, 0B
+	JUMP Z, talkword11
+	COMPARE s0, 0C
+	JUMP Z, talkword12
+	COMPARE s0, 0D
+	JUMP Z, talkword13
+	COMPARE s0, 0E
+	JUMP Z, talkword14
+	COMPARE s0, 0F
+	JUMP Z, talkword15
+	COMPARE s0, 10
+	JUMP Z, talkword16
+	COMPARE s0, 11
+	JUMP Z, talkword17
+	COMPARE s0, 12
+	JUMP Z, talkword18
 
-	JUMP LABEL_DEFAULT
+	JUMP talkworderror
 
-; Table
-LABEL_0:
-	CALL talkword0
-	RETURN
-LABEL_1:
-	CALL talkword1
-	RETURN
-LABEL_2:
-	CALL talkword2
-	RETURN
-LABEL_3:
-	CALL talkword3
-	RETURN
-LABEL_4:
-	CALL talkword4
-	RETURN
-LABEL_5:
-	CALL talkword5
-	RETURN
-LABEL_6:
-	CALL talkword6
-	RETURN
-LABEL_7:
-	CALL talkword7
-	RETURN
-LABEL_8:
-	CALL talkword8
-	RETURN
-LABEL_9:
-	CALL talkword9
-	RETURN
-LABEL_plus:
-	CALL talkword0
-	RETURN
-LABEL_minus:
-	CALL talkword0
-	RETURN
-LABEL_error:
-	CALL talkword0
-	RETURN
-LABEL_DEFAULT:
-	CALL talkworddepth
+; Takes s1, s2, s3, outputs sum to s0
+mathOperation:
+	COMPARE S3, 2B
+	JUMP NZ, subtraction
+
+addition:
+	LOAD s0, s1
+	ADD s0, s2
 	RETURN
 
+subtraction:
+	LOAD s0, s1
+	SUB s0, s2
+	RETURN
+
+; s0 = input
+asciiToSpeech:
+	COMPARE s0, 2B
+	JUMP Z, talkwordplus
+	COMPARE s0, 2D
+	JUMP Z, talkwordminus
+
+	JUMP talkworderror
 
 ;;============================================================================
 ;; Test message and phoneme voicing subroutine.
@@ -447,199 +545,6 @@ talkword19:
 	call	talkword9
 	JUMP	talkwordteen
 
-talkword20:
-	call	talkphonemeTT2
-	call	talkphonemeWW
-	call	talkphonemeEH
-	call	talkphonemeNN1
-
-talkwordty:
-	call	talkphonemeTT2
-	call	talkphonemeIY
-	return
-
-talkword30:
-	call	talkphonemeTH
-	call	talkphonemeER1
-	JUMP	talkwordty
-
-talkword40:
-	call	talkword4
-	JUMP	talkwordty
-
-talkword50:
-	call	talkphonemeFF
-	call	talkphonemeIH
-	call	talkphonemeFF
-	JUMP	talkwordty
-
-talkword60:
-	call	talkword6
-	JUMP	talkwordty
-
-talkword70:
-	call	talkword7
-	JUMP	talkwordty
-
-talkword80:
-	call	talkword8
-	JUMP	talkwordty
-
-talkword90:
-	call	talkword9
-	JUMP	talkwordty
-
-talkwordhundred:
-	call	talkphonemeHH2
-	call	talkphonemeAX
-	call	talkphonemeNN1
-	call	talkphonemeDD2
-	call	talkphonemeRR2
-	call	talkphonemeDD1
-	return
-
-talkworddepth:
-	call	talkphonemeDD2
-	call	talkphonemeEH
-	call	talkphonemeEH
-	call	talkphonemePP
-	call	talkphonemeTH
-	JUMP	endword
-
-talkwordpoint:
-	call	talkphonemePP
-	call	talkphonemeOY
-	call	talkphonemeTT1
-	JUMP	endword
-
-talkwordanchor:
-	call	talkphonemeEY
-	call	talkphonemeKK3
-	call	talkphonemeAE
-	JUMP	endword
-
-talkwordalarm:
-	call	talkphonemeAE
-	call	talkphonemeLL
-	call	talkphonemeAR
-	call	talkphonemeMM
-	JUMP	endword
-
-talkwordon:
-	call	talkphonemeAO
-	call	talkphonemeNG
-	JUMP	endword
-
-talkwordoff:
-	call	talkphonemeAO
-	call	talkphonemeFF
-	call	talkphonemeFF
-	JUMP	endword
-
-talkwordshallow:
-	call	talkphonemeSH
-	call	talkphonemeAE
-	call	talkphonemeLL
-	call	talkphonemeOW
-	JUMP	endword
-
-talkwordand:
-	call	talkphonemeIH
-	call	talkphonemeIH
-	call	talkphonemeNN1
-	call	talkphonemeDD2
-	JUMP	endword
-
-talkwordwatch:
-	call	talkphonemeWW
-	call	talkphonemeAO
-	call	talkphonemeTT1
-	call	talkphonemeCH
-	JUMP	endword
-
-talkwordlimit:
-	call	talkphonemeLL
-	call	talkphonemeIH
-	call	talkphonemeMM
-	call	talkphonemeIH
-	call	talkphonemeTT1
-	JUMP	endword
-
-talkwordset:
-	call	talkphonemeSS
-	call	talkphonemeSS
-	call	talkphonemeEH
-	call	talkphonemeTT2
-	JUMP	endword
-
-talkwordheading:
-	call	talkphonemeHH1
-	call	talkphonemeEH
-	call	talkphonemeDD2
-	call	talkphonemeIH
-	call	talkphonemeNG
-	JUMP	endword
-
-talkwordgps:
-	call	talkphonemeJH
-	call	talkphonemeIY
-	call	talkphonemePP
-	call	talkphonemeIY
-	call	talkphonemeEH
-	call	talkphonemeSS
-	call	talkphonemeSS
-	JUMP	endword
-
-talkwordno:
-	call	talkphonemeNN2
-	call	talkphonemeOW
-	JUMP	endword
-
-talkworddata:
-	call	talkphonemeDD2
-	call	talkphonemeEY
-	call	talkphonemeTT2
-	call	talkphonemeAX
-	JUMP	endword
-
-talkwordnorth:
-	call	talkphonemeNN2
-	call	talkphonemeOR
-	call	talkphonemeHH1
-	JUMP	endword
-
-talkwordsouth:
-	call	talkphonemeSS
-	call	talkphonemeSS
-	call	talkphonemeAW
-	call	talkphonemeTH
-	call	talkphonemeTH
-	JUMP	endword
-
-talkwordeast:
-	call	talkphonemeIY
-	call	talkphonemeSS
-	call	talkphonemeSS
-	call	talkphonemeTT2 
-	JUMP	endword
-
-talkwordwest:
-	call	talkphonemeWW
-	call	talkphonemeEH
-	call	talkphonemeSS
-	call	talkphonemeSS
-	call	talkphonemeTT2
-	JUMP	endword
-
-talkwordposition:
-	call	talkphonemePP
-	call	talkphonemeIH
-	call	talkphonemeZZ
-	call	talkphonemeIH
-	call	talkphonemeSH
-	call	talkphonemeNN1
-	JUMP	endword
-
 ;
 ;
 ;
@@ -649,8 +554,38 @@ talkwordposition:
 ;
 ;
 ;
+talkworderror:
+	call talkphonemeEH
+	call talkphonemeXR
+	call talkphonemeOR
+	JUMP endword
 
+talkwordequals:
+	call talkphonemeIY
+	call talkphonemePA2
+	call talkphonemePA3
+	call talkphonemeKK3
+	call talkphonemeWH
+	call talkphonemeAX
+	call talkphonemeEL
+	call talkphonemeZZ
+	JUMP endword
 
+talkwordplus:
+	call talkphonemePP
+	call talkphonemeLL
+	call talkphonemeAX
+	call talkphonemeAX
+	call talkphonemeSS
+	JUMP endword
+
+talkwordminus:
+	call talkphonemeMM
+	call talkphonemeIH
+	call talkphonemeNN1
+	call talkphonemeAX
+	call talkphonemeZZ
+	JUMP endword
 
 endword:
 	call	talkphonemePA5
