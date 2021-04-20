@@ -302,7 +302,8 @@ wire [7:0] audio_data; //= {~Sample_Clk_Signal,{7{Sample_Clk_Signal}}}; //genera
 //
 
 wire [7:0] picoblaze_phoneme;                      
-            
+
+// PICOBLAZE   
 picoblaze_template
 #(
 .clk_freq_in_hz(25000000)
@@ -319,34 +320,10 @@ picoblaze_template_inst(
   .interrupt_signal               (1'b0)
 );
 
+// DEBUGGING
 assign LED[7:0] = picoblaze_phoneme;
 assign LED[8] = synced_finish;
 assign LED[9] = audio_controller_finish;
-
-// Use sseg signal from picoblaze for LED output, first bit
-// assign LED[0] = sseg[0];
-
-// Interrupt signal control
-// Exists for one 50Mhz clock pulse 
-wire interrupt_signal;
-wire special_reset;
-assign special_reset = SW[1];
-single_pulse_edgeTrap interruptTrap(CLOCK_50, ps2c, interrupt_signal);
-
-//vDFFE #(1) startSignal(ps2c, interrupt_signal, 1'b1, 1'b1, start_signal);
-//vDFFE #(1) interruptSignal(CLK_50M, 1'b0, 1'b1, start_signal, interrupt_signal);
-
-// KEYBOARD CONTROL
-/*
-kbdController keyboardControl(
-  .clk                (ps2c), 
-  .reset              (systemReset), 
-  .command            (kbd_received_ascii_code), 
-  .resetCommand       (resetCommand), 
-  .pause              (pause), 
-  .direction          (direction)
-  );
-*/
 
 // AUDIO CONTROLLER
 wire silent;
@@ -360,21 +337,21 @@ audioController audioControl(
   .audioData      (audio_data), 
   .getNewData     (getNewData), 
   .address        (flash_mem_address),
-  .start_address  (audio_start_address),//(audio_start_address),
-  .end_address    (audio_end_address),//(audio_end_address),
+  .start_address  (audio_start_address),
+  .end_address    (audio_end_address),
   .silent         (silent),
-  .start          (audio_controller_start),//(audio_controller_start),
+  .start          (audio_controller_start),
   .finish         (audio_controller_finish)
 );
 
-// Edge trap
-wire trapped_finish, synced_finish, reset_edge_trap;
+// EDGE TRAP
+// Audio controller finish signal
+wire synced_finish, reset_edge_trap;
 edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
 
+// New keyboard data signal for pico start
 wire pico_finish, pico_start;
 edge_trap pico_start_char(CLK_50M, pico_finish, kbd_data_ready, pico_start);
-//vDFFE finish_signal_edgeTrap1(audio_controller_finish, reset_edge_trap, 1'b1, 1'b1, trapped_finish);
-//vDFFE finish_signal_edgeTrap2(CLK_50M, reset_edge_trap, 1'b1, trapped_finish, synced_finish);
 
 // NARRATOR CONTROLLER
 narrator_ctrl phonemeSelector
