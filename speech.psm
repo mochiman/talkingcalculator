@@ -603,6 +603,7 @@ talkwordplus:
 	call talkphonemeAX
 	call talkphonemeAX
 	call talkphonemeSS
+	call talkphonemeSS
 	JUMP endword
 
 talkwordminus:
@@ -623,7 +624,6 @@ endword:
 
 				; reset finish edge_trap
 				; Start audio FSM
-
 				LOAD s0, 03 
 				OUTPUT s0, FSM_OUT_PORT 
 
