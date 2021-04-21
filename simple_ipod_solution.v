@@ -320,11 +320,6 @@ picoblaze_template_inst(
   .interrupt_signal               (1'b0)
 );
 
-// DEBUGGING
-assign LED[7:0] = picoblaze_phoneme;
-assign LED[8] = synced_finish;
-assign LED[9] = audio_controller_finish;
-
 // AUDIO CONTROLLER
 wire silent;
 wire audio_controller_start, audio_controller_finish;
@@ -373,6 +368,23 @@ wire [7:0] audio_ctrl_data, audio_to_encode;
 mux2_1 #(8) silentDataMux(audio_ctrl_data, 8'b10111100, silent, audio_to_encode);
 
 encode_decode_8b10b audioEncodeDecode(CLK_50M, 1'b0, in_silent, silent, audio_to_encode, audio_data);
+
+// VOLUME CONTROLLER
+// Outputs volume in format xxxxxx000
+// State machine runs on every pulse of 7200Hz clock for sample rate of audio
+wire new_sample;
+single_pulse_edgeTrap volumeControl(CLK_50M, Clock_7200Hz, new_sample);
+
+// Volume FSM
+volume_fsm led_volume_output(
+  .clk(CLK_50M), 
+  .reset(1'b0), 
+  .sample(audio_ctrl_data), 
+  .outVolume(LED[9:2]), 
+  .start(new_sample), 
+  .finish()
+);
+
 
 //======================================================================================
 // 
