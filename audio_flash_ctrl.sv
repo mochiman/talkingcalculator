@@ -187,62 +187,6 @@ module audioController(clk, reset, inData, audioData, getNewData, address, start
     end
 endmodule
 
-// Takes in command and outputs resetCommand, pause, and direction for FSMs
-module kbdController(clk, reset, command, resetCommand, pause, direction);
-    input logic clk, reset;
-    input logic [7:0] command;
-    output logic resetCommand, pause, direction;
-
-    parameter character_B =8'h42;
-    parameter character_D =8'h44;
-    parameter character_E =8'h45;
-    parameter character_F =8'h46;
-    parameter character_R =8'h52;
-
-    logic load_pause, load_direction;
-    logic next_resetCommand, next_direction, next_pause;
-    logic resetSignal;
-
-    vDFFE #(1) resetFF(clk, 1'b0, 1'b1, next_resetCommand, resetSignal);
-    // Synchronization FF, resetCommand only updated on posedge 
-    vDFFE #(1) resetComandFF(resetSignal, reset, 1'b1, 1'b1, resetCommand);
-
-    vDFFE #(1) directionFF(clk, 1'b0, load_direction, next_direction, direction);
-    vDFFE #(1) pauseFF(clk, 1'b0, load_pause, next_pause, pause);
-
-    always_comb begin
-                load_pause = 1'b0; load_direction = 1'b0;
-                next_resetCommand = 1'b0; next_direction = 1'b0; next_pause = 1'b0;
-
-        case (command)
-            character_B: begin
-                next_direction = 1'b1;
-                load_direction = 1'b1;
-            end
-            character_F: begin
-                next_direction = 1'b0;
-                load_direction = 1'b1;
-            end
-            character_E: begin 
-                next_pause = 1'b1;
-                load_pause = 1'b1;
-            end
-            character_D: begin 
-                next_pause = 1'b0;
-                load_pause = 1'b1;
-            end
-            character_R: begin 
-                next_resetCommand = 1'b1;
-            end
-            default: begin
-                load_pause = 1'b0; load_direction = 1'b0;
-                next_resetCommand = 1'b0; next_direction = 1'b0; next_pause = 1'b0;
-            end
-        endcase
-    end
-
-endmodule
-
 // Increases or decreases frequency divider divisor based on speeding up, down, or reset
 module speedController(clk, speedUp, speedDown, reset, currentSpeed);
     parameter defaultSpeed = 32'd6944; // 7200hz
