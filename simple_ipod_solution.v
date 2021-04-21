@@ -334,7 +334,7 @@ audioController audioControl(
   .clk            (Clock_7200Hz), 
   .reset          (1'b0), 
   .inData         (memData), 
-  .audioData      (audio_data), 
+  .audioData      (audio_ctrl_data), 
   .getNewData     (getNewData), 
   .address        (flash_mem_address),
   .start_address  (audio_start_address),
@@ -360,8 +360,19 @@ narrator_ctrl phonemeSelector
   .phoneme_sel    (picoblaze_phoneme),
   .start_address  (audio_start_address),
   .end_address    (audio_end_address),
-  .silent         (silent)
+  .silent         (in_silent)
   );
+
+// 8b10B ENCODING/DECODING
+wire in_silent;
+wire [7:0] audio_ctrl_data, audio_to_encode;
+
+// For control character 28.5 via silent 
+// Normal operation, except when silent character is recieved, feed
+// encoder/decoder character 28.5 and read output of control character for silent signal
+mux2_1 #(8) silentDataMux(audio_ctrl_data, 8'b10111100, silent, audio_to_encode);
+
+encode_decode_8b10b audioEncodeDecode(CLK_50M, 1'b0, in_silent, silent, audio_to_encode, audio_data);
 
 //======================================================================================
 // 
