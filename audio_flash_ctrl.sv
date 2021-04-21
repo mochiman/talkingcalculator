@@ -2,18 +2,15 @@
 
 // Continously reads from memory and outputs readData as outData
 // Will increment address and fetch new data at posedge of the start signal
-module flashController(clk, reset, start, read, byteEnable, waitRequest, readData, readDataValid, outData, direction);
+module flashController(clk, reset, start, read, byteEnable, waitRequest, readData, readDataValid, outData);
     input logic clk, reset; // 50Mhz clock
     input logic start; // Tells flashController to retrieve new data from next address
-    // output logic [22:0] address; // Address to read
     output logic read; 
     output logic [3:0] byteEnable;
     input logic [31:0] readData; // Data in memory
     input logic waitRequest; // Indicates master must wait before sending more read requests
     input logic readDataValid; // Indicates readData has valid data to be read by master
     output logic [31:0] outData; // Output of read audio data
-    input logic direction; // 0 = forward, 1 = backwards
-    // output logic done; // Data has been read, is idling
 
     // STATES
     parameter cleanState = 4'b0000;
@@ -91,14 +88,13 @@ endmodule
 // audio_data =  inData[(current_address %4) * 4 + 4:(current_address %4) * 4]
 // start command from pico, finish sent to pico
 // pico controlls pretty much
-module audioController(clk, reset, inData, audioData, getNewData, address, start_address, end_address, silent, start, finish);
+module audioController(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
     input logic clk, reset;
     input logic [31:0] inData;
     output logic [7:0] audioData;
     output logic getNewData;
     output logic [23:0] address;
     input logic [23:0] start_address, end_address;
-    input logic silent;
     input logic start;
     output logic finish;
 
@@ -157,9 +153,7 @@ module audioController(clk, reset, inData, audioData, getNewData, address, start
 
             state2: begin
                 // Memory to read depends on byte 
-
-                if (silent) audioData = 8'd0;
-                else case (memory_position)
+                case (memory_position)
                     2'd0:   audioData = saved_audio_data[7:0];
                     2'd1:   audioData = saved_audio_data[15:8];
                     2'd2:   audioData = saved_audio_data[23:16];

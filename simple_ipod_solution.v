@@ -227,11 +227,7 @@ wire Sample_Clk_Signal;
 wire Clock_7200Hz;
 wire getNewData;
 wire [31:0] memData;
-wire pause, direction, resetCommand; // Commands from keyboard controller
-wire systemReset; // Reset the state machines
-
-// Additional reset flipflop to synchronize timing with circuit
-vDFFE #(1) syncFF(CLK_50M, 1'b0, 1'b1, resetCommand, systemReset);
+wire systemReset = 1'b0; // Unused, could assign to something
 
 // SPEED CONTROLLER
 wire [31:0] divisor;
@@ -260,7 +256,6 @@ flashController memoryControl(
   .readData       (flash_mem_readdata), 
   .readDataValid  (flash_mem_readdatavalid), 
   .outData        (memData), 
-  .direction      (direction)
 );
 
 
@@ -321,64 +316,80 @@ picoblaze_template_inst(
 );
 
 // AUDIO CONTROLLER
-wire silent;
 wire audio_controller_start, audio_controller_finish;
 wire [23:0] audio_start_address, audio_end_address;
 
 audioController audioControl(
   .clk            (Clock_7200Hz), 
-  .reset          (1'b0), 
+  .reset          (systemReset), 
   .inData         (memData), 
   .audioData      (audio_ctrl_data), 
   .getNewData     (getNewData), 
   .address        (flash_mem_address),
   .start_address  (audio_start_address),
   .end_address    (audio_end_address),
-  .silent         (silent),
   .start          (audio_controller_start),
   .finish         (audio_controller_finish)
 );
 
-// EDGE TRAP
+// Silent signal stops audio output
+mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
+
+// EDGE TRAPS
+// Picoblaze controls reset_edge_trap and pico_finish to synchronize with FSMS
+
 // Audio controller finish signal
+// Indicates to pico that audio controller is finished and new data can be sent
 wire synced_finish, reset_edge_trap;
 edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
 
 // New keyboard data signal for pico start
+// Pico is polling, indicates that it needs to process new input
 wire pico_finish, pico_start;
 edge_trap pico_start_char(CLK_50M, pico_finish, kbd_data_ready, pico_start);
 
 // NARRATOR CONTROLLER
 narrator_ctrl phonemeSelector
-  (
+(
   .clk            (CLK_50M),
   .phoneme_sel    (picoblaze_phoneme),
   .start_address  (audio_start_address),
   .end_address    (audio_end_address),
-  .silent         (in_silent)
-  );
+  .silent         (silent)
+);
 
 // 8b10B ENCODING/DECODING
-wire in_silent;
-wire [7:0] audio_ctrl_data, audio_to_encode;
+wire silent, decoded_silent;
+wire [7:0] audio_ctrl_data, audio_to_encode, decoded_audio;
 
 // For control character 28.5 via silent 
-// Normal operation, except when silent character is recieved, feed
-// encoder/decoder character 28.5 and read output of control character for silent signal
-mux2_1 #(8) silentDataMux(audio_ctrl_data, 8'b10111100, silent, audio_to_encode);
+// Normal operation, except when silent signal from narrator_ctrl is set to high,
+// send character 28.5 through encoder/decoder to get decoded_silent from
+// output_K output of 8b10b decoder
+parameter control_character = 8'b10111100;
+mux2_1 #(8) control_character_mux(audio_ctrl_data, control_character, silent, audio_to_encode);
 
-encode_decode_8b10b audioEncodeDecode(CLK_50M, 1'b0, in_silent, silent, audio_to_encode, audio_data);
+// Encoder and decoder combined into single module
+encode_decode_8b10b combinedEncoderDecoder(
+  .clk        (CLK_50M), 
+  .reset      (systemReset), 
+  .inControl  (silent), 
+  .outControl (decoded_silent), 
+  .inData     (audio_to_encode), 
+  .outData    (decoded_audio)
+);
 
 // VOLUME CONTROLLER
 // Outputs volume in format xxxxxx000
-// State machine runs on every pulse of 7200Hz clock for sample rate of audio
+// Start signal to state machine (indicating new sample to process)
+// is sent on every posedge of 7200Hz clock using single pulse edge trapper
 wire new_sample;
 single_pulse_edgeTrap volumeControl(CLK_50M, Clock_7200Hz, new_sample);
 
 // Volume FSM
 volume_fsm led_volume_output(
   .clk(CLK_50M), 
-  .reset(1'b0), 
+  .reset(systemReset), 
   .sample(audio_ctrl_data), 
   .outVolume(LED[9:2]), 
   .start(new_sample), 
@@ -426,7 +437,7 @@ key2ascii kbd2ascii(
 .ascii_code(kbd_received_ascii_code),
 .clk(conv_now_ignore_timing)
 ); 
-            
+
 parameter scope_info_bytes = 16;
 parameter scope_info_bits_per_byte = 8;
 
@@ -562,7 +573,6 @@ LCD_Scope_Encapsulated_pacoblaze_wrapper LCD_LED_scope(
                           .enable_scope(allow_run_LCD_scope) //don't touch
                           
     );  
-    
 
 //=====================================================================================
 //

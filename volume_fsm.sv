@@ -1,34 +1,37 @@
 // Volume FSM
 // Takes 256 samples of audio data, gets the absolute value, averages them, 
-// and outputs volume from left to right
+// and outputs volume from left to right in format XXXXXX00 based on MSB
 module volume_fsm(clk, reset, sample, outVolume, start, finish);
     input logic clk, reset;
     input logic [7:0] sample;
     output logic [7:0] outVolume;
-    input logic start;  // Indicates new audio sample has been recieved
-    output logic finish; // Indicates idle
+    input logic start;      // Process current audio sample
+    output logic finish;    // Indicates idle
 
     // State encoding
-    // 4 states represented by 2 bits
-    // State encoding represented as 6 bits and includes in order:
-    // load_sample_sum, load_sample_count, load_volume, reset_sample_sum, reset_sample_count, finish
-    logic [7:0] current_state;
+    // 4 states represented by 2 bits and control signals in trailing 5 bits
+    logic [6:0] current_state;
 
-    parameter reset_fsm =           8'b00_000110;
-    parameter wait_for_sample =     8'b00_000001;
-    parameter process_sample =      8'b01_110000;
-    parameter update_volume =       8'b10_001000;
+    parameter wait_for_sample       =   7'b00_00001;
+    parameter process_sample        =   7'b01_11000;
+    parameter average_samples       =   7'b10_10110;
+    parameter update_volume         =   7'b11_00100;
 
-    logic [15:0] sample_sum, next_sample_sum;           // Sum of samples, every time a sample is recieved add to this reg
-    logic [7:0]  sample_count, next_sample_count;       // Number of samples counted
-    logic [7:0]  next_volume;
-    logic load_sample_sum, load_sample_count, load_volume;
-    logic reset_sample_sum, reset_sample_count;
+    // Control signal assignment
+    assign {load_sample_sum, load_sample_count, load_volume, average_sum, finish} = current_state[4:0];
+    
+    // Sampling and volume signals
+    logic [15:0]    sample_sum,     next_sample_sum;    // Sum of samples
+    logic [7:0]     sample_count,   next_sample_count;  // Number of samples counted
+    logic [7:0]     next_volume;                        // Output volume
+
+    // Load enables for FFs
+    logic   load_sample_sum,    load_sample_count,  load_volume;  
 
     // Flipflops to save sum, count, and volume
-    vDFFE #(16) sample_sum_FF   (clk, reset_sample_sum,     load_sample_sum,    next_sample_sum,    sample_sum);
-    vDFFE #(8)  sample_count_FF (clk, reset_sample_count,   load_sample_count,  next_sample_count,  sample_count);
-    vDFFE #(8)  volume_FF       (clk, reset,                load_volume,        next_volume,        outVolume);
+    vDFFE #(16) sample_sum_FF   (clk,   reset,    load_sample_sum,      next_sample_sum,    sample_sum);
+    vDFFE #(8)  sample_count_FF (clk,   reset,    load_sample_count,    next_sample_count,  sample_count);
+    vDFFE #(8)  volume_FF       (clk,   reset,    load_volume,          next_volume,        outVolume);
 
     // Counter for sample count
     counter #(.width(8), .increment(1), .min(0), .max(255)) sample_counter(1'b0, sample_count, next_sample_count);
@@ -38,31 +41,35 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
     absolute_value #(8) get_sample_abs_value(sample, sample_abs_value);
 
     // Summation logic
-    assign next_sample_sum = sample_sum + sample_abs_value;
+    logic average_sum;
+    assign next_sample_sum = average_sum ? (sample_sum >> 8) : (sample_sum + sample_abs_value);
 
     // Volume logic
-    sum_to_volume volumeOut(sample_sum[15:8], next_volume);
+    // Volume FF is load enabled after sum is averaged 
+    sum_to_volume volumeOut(sample_sum[7:0], next_volume);
 
-    // State encoding
-    assign {load_sample_sum, load_sample_count, load_volume, reset_sample_sum, reset_sample_count, finish} = current_state[5:0];
-
-    // State machine with synchronous reset
-    always_ff @(posedge clk) begin
-        if (reset) current_state <= reset_fsm;
+    // State machine with asynchronous reset
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) current_state <= wait_for_sample;
 
         else case (current_state)
-            reset_fsm: current_state <= wait_for_sample;
-
+            // Wait in this state until start signal is issued and new sample exists to process
             wait_for_sample: if (start) current_state <= process_sample;
 
+            // Process by adding absolute value to sum
+            // Update volume using current sum if count is 255
             process_sample: begin
-                if (sample_count == 8'd255) current_state <= update_volume;
+                if (sample_count == 8'd255) current_state <= average_samples;
                 else current_state <= wait_for_sample;
             end
 
-            update_volume: current_state <= reset_fsm;
+            // Average samples by setting load_sample_sum and average_sum
+            average_samples: current_state <= update_volume;
 
-            default: current_state <= reset_fsm;
+            // Load volume ff, then reset sample sum and count
+            update_volume: current_state <= wait_for_sample;
+
+            default: current_state <= wait_for_sample;
         endcase
     end
 endmodule
