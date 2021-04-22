@@ -88,23 +88,6 @@ pacoblaze3 led_8seg_kcpsm
 //  -- A simple binary counter is used to divide the 50MHz system clock and provide interrupt pulses.
 //  --
 
-
-// Note that because we are using clock enable we DO NOT need to synchronize with clk
-/*
-  always @ (posedge clk)
-  begin
-      //--divide 50MHz by 50,000,000 to form 1Hz pulses
-      if (int_count==(clk_freq_in_hz-1)) //clock enable
-		begin
-         int_count <= 0;
-         event_1hz <= 1;
-      end else
-		begin
-         int_count <= int_count + 1;
-         event_1hz <= 0;
-      end
- end
-*/
  always @ (posedge clk or posedge interrupt_ack)  //FF with clock "clk" and reset "interrupt_ack"
  begin
       if (interrupt_ack) //if we get reset, reset interrupt in order to wait for next clock.

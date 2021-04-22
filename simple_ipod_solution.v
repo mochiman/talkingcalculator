@@ -216,7 +216,6 @@ parameter character_exclaim=8'h21;          //'!'
 
 
 wire Clock_1KHz, Clock_1Hz;
-wire Sample_Clk_Signal;
 
 //=======================================================================================================================
 //
@@ -259,7 +258,7 @@ flashController memoryControl(
   .finish         ()
 );
 
-
+// FLASH CHIP
 wire            flash_mem_read; // FSM output
 wire            flash_mem_waitrequest; // FSM input
 wire    [22:0]  flash_mem_address; // FSM output
@@ -282,12 +281,8 @@ flash flash_inst (
     .flash_mem_byteenable    (flash_mem_byteenable)
 );
             
-
-assign Sample_Clk_Signal = Clock_1KHz;
-
-//Audio Generation Signal
-//Note that the audio needs signed data - so convert 1 bit to 8 bits signed
-wire [7:0] audio_data; //= {~Sample_Clk_Signal,{7{Sample_Clk_Signal}}}; //generate signed sample audio signal
+// Audio Generation Signal
+wire [7:0] audio_data; 
 
 
 
@@ -334,6 +329,7 @@ audioController audioControl(
 );
 
 // Silent signal stops audio output
+// Uses signals passed through 8b10b encoder/decoder
 mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
 
 // EDGE TRAPS

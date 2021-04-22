@@ -51,43 +51,44 @@ endmodule
 
 // Takes 32-bit audio data and outputs samples from byte addresses 
 // start_address to end_address which are read from flash using the getNewData signal
-// Playback rate is synced to the clk
 module audioController(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
     input logic clk, reset;
     input logic [31:0] inData;
     output logic [7:0] audioData;
     output logic getNewData;
-    output logic [23:0] address;
+    output logic [22:0] address;
     input logic [23:0] start_address, end_address;
     input logic start;
     output logic finish;
 
-    parameter state1 = 1'b0;    // Idling
-    parameter state2 = 1'b1;    // Playback
+    // STATE LOGIC
+    parameter idle = 1'b0;   
+    parameter playback = 1'b1; 
 
-    // ADDRESS CONTROL LOGIC
-    logic enable_address;
-    logic [23:0] current_address, next_address; // current_address counts byte addresses
-    vDFFE #(24) addressFF(clk, reset, 1'b1, next_address, current_address);
+    logic current_state, next_state;
+    vDFFE #(1) stateFF(clk, reset, 1'b1, next_state, current_state);
 
-    // SYNCRONIZATION LOGIC
+    // SYNCHRONIZATION LOGIC
+    // Sync the start signal to only posedge
     logic synced_start;
     single_pulse_edgeTrap startTrap(clk, start, synced_start);
 
+     // ADDRESS CONTROL LOGIC
+    logic enable_address;
+    logic [23:0] current_byte_address, next_byte_address; 
+    vDFFE #(24) addressFF(clk, reset, 1'b1, next_byte_address, current_byte_address);
+
     // ADDRESSING LOGIC
-    logic [23:0] word_address;
-    logic [1:0]  memory_position; 
-    assign word_address = current_address / 24'd4;
-    assign memory_position = current_address % 24'd4;
+    logic [22:0] word_address;
+    logic [1:0]  memory_position;
+    assign word_address = current_byte_address / 24'd4;
+    assign memory_position = current_byte_address % 24'd4;
 
     // MEMORY LOGIC
+    // save value of inData only on clock pulse to sync with audio controller
     logic [31:0] saved_audio_data;
     logic load_audio_data;
     vDFFE #(32) audio_data_ff(clk, reset, load_audio_data, inData, saved_audio_data);
-
-    // STATE LOGIC
-    logic current_state, next_state;
-    vDFFE #(1) stateFF(clk, reset, 1'b1, next_state, current_state);
 
     always_comb begin
         next_state = current_state; 
@@ -97,19 +98,21 @@ module audioController(clk, reset, inData, audioData, getNewData, address, start
         address = word_address;
 
         case (current_state) 
-            state1: begin
+            idle: begin
                 audioData = 8'd0;
                 finish = 1'b1;
-                next_address = start_address;                
+                next_byte_address = start_address;   
+
+                // Start signal recieved, load new audio from flash
                 if (synced_start) begin 
-                    next_state = state2;
-                    getNewData = 1'b1; // Load new audio data from player
+                    next_state = playback;
+                    getNewData = 1'b1; 
                     load_audio_data = 1'b1;
                 end
             end
 
-            state2: begin
-                // Memory to read depends on byte 
+            playback: begin
+                // Sample to output depends on byte 
                 case (memory_position)
                     2'd0:   audioData = saved_audio_data[7:0];
                     2'd1:   audioData = saved_audio_data[15:8];
@@ -117,10 +120,10 @@ module audioController(clk, reset, inData, audioData, getNewData, address, start
                     2'd3:   audioData = saved_audio_data[31:24];
                     default: audioData = 8'bx;
                 endcase
-                next_address = current_address + 24'd1;
+                next_byte_address = current_byte_address + 24'd1;
 
                 // If were at the last address, finish
-                if (current_address == end_address) next_state = state1;
+                if (current_byte_address == end_address) next_state = idle;
 
                 // Otherwise if were at the last byte, read new flash data
                 else if (memory_position == 3) begin 
@@ -130,10 +133,7 @@ module audioController(clk, reset, inData, audioData, getNewData, address, start
                 end
             end
 
-            default: begin
-            next_address = 24'bx;
-            next_state = state1;
-            end
+            default: next_state = idle;
         endcase
     end
 endmodule
