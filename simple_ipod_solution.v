@@ -249,13 +249,14 @@ clockdivider32 clock22(
 flashController memoryControl(
   .clk            (CLK_50M), 
   .reset          (systemReset), 
-  .start          (getNewData), 
   .read           (flash_mem_read), 
   .byteEnable     (flash_mem_byteenable), 
   .waitRequest    (flash_mem_waitrequest), 
   .readData       (flash_mem_readdata), 
   .readDataValid  (flash_mem_readdatavalid), 
   .outData        (memData), 
+  .start          (getNewData),
+  .finish         ()
 );
 
 
@@ -333,20 +334,21 @@ audioController audioControl(
 );
 
 // Silent signal stops audio output
-mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
+mux2_1 #(8) audio_output_mux(audio_ctrl_data, 8'd0, silent, audio_data);
 
 // EDGE TRAPS
-// Picoblaze controls reset_edge_trap and pico_finish to synchronize with FSMS
-
-// Audio controller finish signal
-// Indicates to pico that audio controller is finished and new data can be sent
-wire synced_finish, reset_edge_trap;
-edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
+// These edge traps are used to coordinate between the picoblaze and the FSMs
+// The picoblaze polls for the trapped start signal, and resets the trap using its finish signal
+// The picoblaze also polls the audio_controller_finish signal to indicate when it can send a new phoneme,
+// and resets when sending a new phoneme
 
 // New keyboard data signal for pico start
-// Pico is polling, indicates that it needs to process new input
 wire pico_finish, pico_start;
 edge_trap pico_start_char(CLK_50M, pico_finish, kbd_data_ready, pico_start);
+
+// Audio controller finish signal
+wire synced_finish, reset_edge_trap;
+edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
 
 // NARRATOR CONTROLLER
 narrator_ctrl phonemeSelector
@@ -359,8 +361,11 @@ narrator_ctrl phonemeSelector
 );
 
 // 8b10B ENCODING/DECODING
+// Audio ctrl data is the sample selected by the audio controller
+// Decoded_silent and decoded_audio are the signals passed through the
+// 8b10b encoder decoder pair
 wire silent, decoded_silent;
-wire [7:0] audio_ctrl_data, audio_to_encode, decoded_audio;
+wire [7:0] audio_ctrl_data, audio_to_encode, encoded_audio, decoded_audio;
 
 // For control character 28.5 via silent 
 // Normal operation, except when silent signal from narrator_ctrl is set to high,
@@ -369,30 +374,37 @@ wire [7:0] audio_ctrl_data, audio_to_encode, decoded_audio;
 parameter control_character = 8'b10111100;
 mux2_1 #(8) control_character_mux(audio_ctrl_data, control_character, silent, audio_to_encode);
 
-// Encoder and decoder combined into single module
-encode_decode_8b10b combinedEncoderDecoder(
-  .clk        (CLK_50M), 
-  .reset      (systemReset), 
-  .inControl  (silent), 
-  .outControl (decoded_silent), 
-  .inData     (audio_to_encode), 
-  .outData    (decoded_audio)
+encoder_8b10b encode_audio (
+  .reset(systemReset),
+  .SBYTECLK(CLK_50M),
+  .K(silent),
+  .ebi(audio_to_encode),
+  .tbi(encoded_audio),
+  .disparity()
+);
+
+decoder_8b10b decode_audio (
+  .reset(systemReset),
+  .RBYTECLK(CLK_50M),
+  .tbi(encoded_audio),
+  .K_out(decoded_silent),
+  .ebi(decoded_audio),
+  .coding_err(),
+  .disparity(),
+  .disparity_err()
 );
 
 // VOLUME CONTROLLER
 // Outputs volume in format xxxxxx000
-// Start signal to state machine (indicating new sample to process)
-// is sent on every posedge of 7200Hz clock using single pulse edge trapper
-wire new_sample;
-single_pulse_edgeTrap volumeControl(CLK_50M, Clock_7200Hz, new_sample);
-
-// Volume FSM
+// State machine is run on every posedge of the
+// audio playback clock indicating new sample
+// needs to be read
 volume_fsm led_volume_output(
   .clk(CLK_50M), 
   .reset(systemReset), 
   .sample(audio_ctrl_data), 
   .outVolume(LED[9:2]), 
-  .start(new_sample), 
+  .start(Clock_7200Hz), 
   .finish()
 );
 

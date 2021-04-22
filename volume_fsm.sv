@@ -48,13 +48,18 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
     // Volume FF is load enabled after sum is averaged 
     sum_to_volume volumeOut(sample_sum[7:0], next_volume);
 
+    // Synchronization logic
+    // State machine only runs on posedge of start signal
+    logic synced_start;
+    single_pulse_edgeTrap start_trap(clk, start, synced_start);
+
     // State machine with asynchronous reset
     always_ff @(posedge clk or posedge reset) begin
         if (reset) current_state <= wait_for_sample;
 
         else case (current_state)
             // Wait in this state until start signal is issued and new sample exists to process
-            wait_for_sample: if (start) current_state <= process_sample;
+            wait_for_sample: if (synced_start) current_state <= process_sample;
 
             // Process by adding absolute value to sum
             // Update volume using current sum if count is 255
