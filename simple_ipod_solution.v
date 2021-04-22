@@ -334,7 +334,7 @@ audioController audioControl(
 );
 
 // Silent signal stops audio output
-mux2_1 #(8) audio_output_mux(audio_ctrl_data, 8'd0, silent, audio_data);
+mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
 
 // EDGE TRAPS
 // These edge traps are used to coordinate between the picoblaze and the FSMs
