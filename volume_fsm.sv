@@ -40,7 +40,7 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
     logic [7:0] sample_abs_value;
     absolute_value #(8) get_sample_abs_value(sample, sample_abs_value);
 
-    // Summation logic
+    // Summation and average logic
     logic average_sum;
     assign next_sample_sum = average_sum ? (sample_sum >> 8) : (sample_sum + sample_abs_value);
 
@@ -71,7 +71,7 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
             // Average samples by setting load_sample_sum and average_sum
             average_samples: current_state <= update_volume;
 
-            // Load volume ff, then reset sample sum and count
+            // Load volume ff using averaged sum
             update_volume: current_state <= wait_for_sample;
 
             default: current_state <= wait_for_sample;
