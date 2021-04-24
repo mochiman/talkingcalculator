@@ -1,14 +1,41 @@
+`default_nettype none
+
 // Volume FSM
 // Takes 256 samples of audio data, gets the absolute value, averages them, 
 // and outputs volume from left to right in format XXXXXX00 based on MSB
 module volume_fsm(clk, reset, sample, outVolume, start, finish);
-    input logic clk, reset;
-    input logic [7:0] sample;
-    output logic [7:0] outVolume;
-    input logic start;      // Process current audio sample
-    output logic finish;    // Indicates idle
+    input   logic           clk, reset;
+    input   logic [7:0]     sample;
+    output  logic [7:0]     outVolume;
+    input   logic           start;      // Process current audio sample
+    output  logic           finish;     // Indicates idle
 
-    // State encoding
+    // SAMPLING AND VOLUME SIGNALS
+    logic [15:0]    sample_sum,     next_sample_sum;    // Sum of samples
+    logic [7:0]     sample_count,   next_sample_count;  // Number of samples counted
+    logic [7:0]     next_volume;                        // Output volume
+    
+    logic load_sample_sum, load_sample_count, load_volume;  
+
+    // ABSOLUTE VALUE LOGIC
+    logic [7:0] sample_abs_value;
+    absolute_value #(8) get_sample_abs_value(sample, sample_abs_value);
+
+    // SUMMATION AND AVERAGING LOGIC
+    logic average_sum;
+    assign next_sample_sum = average_sum ? (sample_sum >> 8) : (sample_sum + sample_abs_value);
+
+    // COUNTER LOGIC
+    counter #(.width(8), .increment(1), .min(0), .max(255)) sample_counter(1'b0, sample_count, next_sample_count);
+
+    // VOLUME OUTPUT LOGIC
+    sum_to_volume volumeOut(sample_sum[7:0], next_volume);
+
+    // SYNCHRONIZATION LOGIC
+    logic synced_start;
+    single_pulse_edgeTrap start_trap(clk, start, synced_start);
+
+    // STATE LOGIC
     // 4 states represented by 2 bits and control signals in trailing 5 bits
     logic [6:0] current_state;
 
@@ -17,48 +44,19 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
     parameter average_samples       =   7'b10_10110;
     parameter update_volume         =   7'b11_00100;
 
-    // Control signal assignment
     assign {load_sample_sum, load_sample_count, load_volume, average_sum, finish} = current_state[4:0];
-    
-    // Sampling and volume signals
-    logic [15:0]    sample_sum,     next_sample_sum;    // Sum of samples
-    logic [7:0]     sample_count,   next_sample_count;  // Number of samples counted
-    logic [7:0]     next_volume;                        // Output volume
 
-    // Load enables for FFs
-    logic   load_sample_sum,    load_sample_count,  load_volume;  
-
-    // Flipflops to save sum, count, and volume
+    // FLIP FLOPS
     vDFFE #(16) sample_sum_FF   (clk,   reset,    load_sample_sum,      next_sample_sum,    sample_sum);
     vDFFE #(8)  sample_count_FF (clk,   reset,    load_sample_count,    next_sample_count,  sample_count);
     vDFFE #(8)  volume_FF       (clk,   reset,    load_volume,          next_volume,        outVolume);
-
-    // Counter for sample count
-    counter #(.width(8), .increment(1), .min(0), .max(255)) sample_counter(1'b0, sample_count, next_sample_count);
-
-    // Absolute value logic
-    logic [7:0] sample_abs_value;
-    absolute_value #(8) get_sample_abs_value(sample, sample_abs_value);
-
-    // Summation and average logic
-    logic average_sum;
-    assign next_sample_sum = average_sum ? (sample_sum >> 8) : (sample_sum + sample_abs_value);
-
-    // Volume logic
-    // Volume FF is load enabled after sum is averaged 
-    sum_to_volume volumeOut(sample_sum[7:0], next_volume);
-
-    // Synchronization logic
-    // State machine only runs on posedge of start signal
-    logic synced_start;
-    single_pulse_edgeTrap start_trap(clk, start, synced_start);
 
     // State machine with asynchronous reset
     always_ff @(posedge clk or posedge reset) begin
         if (reset) current_state <= wait_for_sample;
 
         else case (current_state)
-            // Wait in this state until start signal is issued and new sample exists to process
+            // Wait in this state until start signal is issued indicating new sample exists to process
             wait_for_sample: if (synced_start) current_state <= process_sample;
 
             // Process by adding absolute value to sum

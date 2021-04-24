@@ -2,16 +2,20 @@
 
 // When it recieves the start signal, it will perform routine to retrieve memory
 // from address controlled by audio controller and output it to outData via FF.
-module flash_controller(clk, reset, read, byteEnable, waitRequest, readData, readDataValid, outData, start, finish);
+module flash_ctrl(clk, reset, read, byteEnable, waitRequest, readData, readDataValid, outData, start, finish);
     input   logic           clk, reset;     // 50Mhz clock
     output  logic           read;           // Flash read signal
     output  logic [3:0]     byteEnable;     // Assigned to 4'b1111
     input   logic [31:0]    readData;       // Data from memory
     input   logic           waitRequest;    // Indicates master must wait before sending more read requests
     input   logic           readDataValid;  // Indicates readData has valid data to be read by master
-    output  logic           [31:0] outData; // Output of read audio data
+    output  logic [31:0]    outData; // Output of read audio data
     input   logic           start;          // Tells flashController to retrieve new data from next address
     output  logic           finish;         // Incicates flash controller is finished retrieving memory and is idling
+
+    // DATA OUTPUT LOGIC
+    logic enable_outData;
+    vDFFE #(32) updateDataFF(clk, reset, enable_outData, readData, outData);
 
     // STATES
     logic [4:0] state;
@@ -26,10 +30,6 @@ module flash_controller(clk, reset, read, byteEnable, waitRequest, readData, rea
     // Single pulse edge capture on start signal
     logic synced_start;
     single_pulse_edgeTrap start_trap(clk, start, synced_start);
-
-    // DATA OUTPUT LOGIC
-    logic enable_outData;
-    vDFFE #(32) updateDataFF(clk, reset, enable_outData, readData, outData);
 
     always_ff @(posedge clk or posedge reset) begin
         if (reset) state <= idle;
@@ -50,7 +50,7 @@ endmodule
 
 // Takes 32-bit audio data and outputs samples from byte addresses 
 // start_address to end_address which are read from flash using the getNewData signal
-module audio_controller(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
     input   logic           clk, reset;
     input   logic [31:0]    inData;
     output  logic [7:0]     audioData;
@@ -94,11 +94,12 @@ module audio_controller(clk, reset, inData, audioData, getNewData, address, star
         getNewData = 1'b0;     
         finish = 1'b0;
         load_audio_data = 1'b0;
+        audioData = 8'd0;
         address = word_address;
 
         case (current_state) 
             idle: begin
-                audioData = 8'd0;
+                // Idling
                 finish = 1'b1;
                 next_byte_address = start_address;   
 
@@ -119,15 +120,16 @@ module audio_controller(clk, reset, inData, audioData, getNewData, address, star
                     2'd3:   audioData = saved_audio_data[31:24];
                     default: audioData = 8'd0;
                 endcase
-                
+
+                // Address assignment
                 next_byte_address = current_byte_address + 24'd1;
+                address = word_address + 24'd1; // While were on byte 3, read next flash address
 
                 // If were at the last address, finish
                 if (current_byte_address == end_address) next_state = idle;
 
                 // Otherwise if were at the last byte, read new flash data
                 else if (memory_position == 3) begin 
-                    address = word_address + 24'd1; // While were on byte 3, read next flash address
                     getNewData = 1'b1;
                     load_audio_data = 1'b1;
                 end
@@ -139,7 +141,7 @@ module audio_controller(clk, reset, inData, audioData, getNewData, address, star
 endmodule
 
 // Increases or decreases frequency divider divisor based on speeding up, down, or reset
-module speed_controller(clk, speedUp, speedDown, reset, currentSpeed);
+module speed_ctrl(clk, speedUp, speedDown, reset, currentSpeed);
     parameter defaultSpeed = 32'd6944; // 7200hz
     parameter speedFactor = 32'd50;
 
