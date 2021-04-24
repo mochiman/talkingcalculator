@@ -325,9 +325,16 @@ audio_ctrl audioControl(
   .address          (flash_mem_address),
   .start_address    (audio_start_address),
   .end_address      (audio_end_address),
-  .silent           (decoded_silent),
   .start            (audio_controller_start),
   .finish           (audio_controller_finish)
+);
+
+// Use decoded signals to select audio data and silence
+mux2_1 #(8) silence_mux(
+  .a0     (decoded_audio), 
+  .a1     (8'd0), 
+  .select (decoded_silent), 
+  .out    (audio_data)
 );
 
 // EDGE TRAPS
@@ -369,7 +376,8 @@ narrator_ctrl phonemeSelector
 // Decoded_silent and decoded_audio are the signals passed through the
 // 8b10b encoder decoder pair
 wire silent, decoded_silent;
-wire [7:0] audio_ctrl_data, audio_to_encode, encoded_audio, decoded_audio;
+wire [7:0] audio_ctrl_data, audio_to_encode, decoded_audio;
+wire [9:0] encoded_audio;
 
 // For control character 28.5 via silent 
 // Normal operation, except when silent signal from narrator_ctrl is set to high,
@@ -398,7 +406,7 @@ decoder_8b10b decode_audio (
   .RBYTECLK     (CLK_50M),
   .tbi          (encoded_audio),
   .K_out        (decoded_silent),
-  .ebi          (audio_data),
+  .ebi          (decoded_audio),
   .coding_err   (),
   .disparity    (),
   .disparity_err()
@@ -412,7 +420,7 @@ decoder_8b10b decode_audio (
 volume_fsm led_volume_output(
   .clk        (CLK_50M), 
   .reset      (systemReset), 
-  .sample     (audio_ctrl_data), 
+  .sample     (audio_data), 
   .outVolume  (LED[9:2]), 
   .start      (Clock_7200Hz), 
   .finish     ()

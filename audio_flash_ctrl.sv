@@ -50,14 +50,13 @@ endmodule
 
 // Takes 32-bit audio data and outputs samples from byte addresses 
 // start_address to end_address which are read from flash using the getNewData signal
-module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, address, start_address, end_address, silent, start, finish);
+module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
     input   logic           clk, sample_rate_clk, reset;
     input   logic [31:0]    inData;                     // Data from flash controller
     output  logic [7:0]     audioData;                  // Audio to output
     output  logic           getNewData;                 // Signal flash to read new data from flash
     output  logic [22:0]    address;                    // Flash address to read (word_address)
     input   logic [23:0]    start_address, end_address; // Start and end addresses (byte_address)
-    input   logic           silent;
     input   logic           start;
     output  logic           finish;
 
@@ -116,9 +115,7 @@ module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, ad
             playback: begin
                 if (synced_sample_clk) begin
                     // Sample to output depends on byte 
-                    // If silent signal is issued, no audio output
-                    if (silent) audioData <= 8'd0;
-                    else case (memory_position)
+                    case (memory_position)
                         2'd0:   audioData <= inData[7:0];
                         2'd1:   audioData <= inData[15:8];
                         2'd2:   audioData <= inData[23:16];
