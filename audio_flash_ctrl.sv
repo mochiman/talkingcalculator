@@ -61,81 +61,77 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
     output  logic           finish;
 
     // STATE LOGIC
-    logic current_state, next_state;
+    logic [1:0] state;
 
-    parameter idle = 1'b0;   
-    parameter playback = 1'b1; 
+    parameter idle = 2'b0_1;   
+    parameter playback = 2'b1_0;
+
+    assign finish = state[0]; 
 
     // SYNCHRONIZATION LOGIC
-    // Sync the start signal to only posedge
+    // Single pulse edge capture on start signal
     logic synced_start;
     single_pulse_edgeTrap startTrap(clk, start, synced_start);
 
     // ADDRESS CONTROL LOGIC
-    logic [23:0] current_byte_address, next_byte_address; 
-    logic enable_address;
-
+    logic [23:0] byte_address; 
     logic [22:0] word_address;
     logic [1:0]  memory_position;
-    assign word_address = current_byte_address / 24'd4;
-    assign memory_position = current_byte_address % 24'd4;
+    assign word_address = byte_address / 24'd4;
+    assign memory_position = byte_address % 24'd4;
 
-    // AUDIO DATA LOGIC
-    logic [31:0] saved_audio_data;
-    logic load_audio_data;
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) state <= idle;
 
-    // FLIP FLOPS
-    vDFFE #(1)  stateFF(clk, reset, 1'b1, next_state, current_state);
-    vDFFE #(24) addressFF(clk, reset, 1'b1, next_byte_address, current_byte_address);
-    vDFFE #(32) audio_data_ff(clk, reset, load_audio_data, inData, saved_audio_data);
-
-    always_comb begin
-        next_state = current_state; 
-        getNewData = 1'b0;     
-        finish = 1'b0;
-        load_audio_data = 1'b0;
-        audioData = 8'd0;
-        address = word_address;
-
-        case (current_state) 
+        else case (state) 
             idle: begin
                 // Idling
-                finish = 1'b1;
-                next_byte_address = start_address;   
+                byte_address <= start_address;  
+                address <= start_address % 24'd4;
+                audioData <= 8'd0; 
 
                 // Start signal recieved, load new audio from flash
                 if (synced_start) begin 
-                    next_state = playback;
-                    getNewData = 1'b1; 
-                    load_audio_data = 1'b1;
+                    state <= playback;
+                    getNewData <= 1'b1; 
+                end
+
+                else begin
+                    getNewData = 1'b0; 
                 end
             end
 
             playback: begin
                 // Sample to output depends on byte 
                 case (memory_position)
-                    2'd0:   audioData = saved_audio_data[7:0];
-                    2'd1:   audioData = saved_audio_data[15:8];
-                    2'd2:   audioData = saved_audio_data[23:16];
-                    2'd3:   audioData = saved_audio_data[31:24];
-                    default: audioData = 8'd0;
+                    2'd0:   audioData <= inData[7:0];
+                    2'd1:   audioData <= inData[15:8];
+                    2'd2:   audioData <= inData[23:16];
+                    2'd3:   audioData <= inData[31:24];
+                    default: audioData <= 8'd0;
                 endcase
 
                 // Address assignment
-                next_byte_address = current_byte_address + 24'd1;
-                address = word_address + 24'd1; // While were on byte 3, read next flash address
+                byte_address <= byte_address + 24'd1;
+                address <= word_address + 24'd1; // While were on byte 3, read next flash address
 
                 // If were at the last address, finish
-                if (current_byte_address == end_address) next_state = idle;
+                if (byte_address == end_address) begin
+                    state <= idle;
+                    getNewData <= 1'b0;
+                end
 
                 // Otherwise if were at the last byte, read new flash data
                 else if (memory_position == 3) begin 
-                    getNewData = 1'b1;
-                    load_audio_data = 1'b1;
+                    getNewData <= 1'b1;
+                end
+
+                else begin
+                    getNewData <= 1'b0;
                 end
             end
 
-            default: next_state = idle;
+            default: state <= idle;
         endcase
     end
 endmodule
