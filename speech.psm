@@ -5,16 +5,16 @@
 ;
 CONSTANT PHONEME_OUT_PORT, 80       ; Output of phoneme code 
 CONSTANT ASCII_IN_PORT, 00	        ; Input data of phoneme from keyboard
-CONSTANT FSM_OUT_PORT, 40 			; 1st bit is audio_ctrl start, 2nd bit is reset_edge_trap (for finish), 3rd bit is pico finish signal
-CONSTANT FSM_IN_PORT, 20 			; 1st bit is audio_ctrl finish, 2nd bit is pico_start
+CONSTANT FSM_OUT_PORT, 40 			; Output with 1st bit audio_ctrl start, 2nd bit reset_edge_trap (for audio_ctrl finish trap), 3rd bit pico finish signal
+CONSTANT FSM_IN_PORT, 20 			; Input with 1st bit audio_ctrl finish, 2nd bit pico_start
 
 ;**************************************************************************************
 ; Scratch Pad Memory Locations
 ;**************************************************************************************
 ;
 ;
-CONSTANT SAVED_ASCII, 04                    ; 1st number
-CONSTANT SAVED_NUM, 05                    ; 2nd number
+CONSTANT SAVED_ASCII, 04 			; Saves inputted ascii value from kbd
+CONSTANT SAVED_NUM, 05				; Saves ascii value converted into number
 
 
 ;**************************************************************************************
@@ -215,25 +215,29 @@ cold_start: LOAD s4, 00                   ; Using s4 because step must be 0 for 
 ; 2: num2 = input
 ; 3: output result and reset step
 
+; Register definitions
 ; s0 = ASCII input, operations
 ; s1 = NUM1		(0-9)
 ; s2 = NUM2		(0-9)
 ; s3 = Operator (+/-)
-; s4 = Step 	(0-3)(which step of the calc were on)
+; s4 = Step 	(0-3)(which step of the calculation were on)
 			
 main_program: 
-	; Polling for pico_start signal
+	; Polling for pico_start signal in FSM_IN_PORT[1]
 	INPUT s0, FSM_IN_PORT
 	TEST s0, 02
 	JUMP Z, main_program
 
 	; We've recieved a character, process it
-	; Output audio data of character
+	; Get ascii and save value
 	INPUT s0, ASCII_IN_PORT
 	STORE s0, SAVED_ASCII
-	SUB s0, 30 ; Convert ascii to num
+
+	; Convert ascii to number and save
+	SUB s0, 30 
 	STORE s0, SAVED_NUM
 
+	; Jump to the step of calculation were on
 	COMPARE s4, 00
 	JUMP Z, step1
 	COMPARE s4, 01
@@ -245,16 +249,16 @@ main_program:
 
 	JUMP error ; should not be able to get here
 
+; Last step was successful and value was stored, increment step for next input
 increment_step:
-	; Last step was successful and value was stored, increment step for next input
 	ADD s4, 01
 	JUMP finish
 
 error:
 	CALL talkworderror
 
+; Reset pico_start signal, allowing picoblaze to recieve new commands from hardware
 finish:
-	; Reset pico_start signal
 	LOAD s0, 04
 	OUTPUT s0, FSM_OUT_PORT
 	LOAD s0, 00
@@ -262,7 +266,7 @@ finish:
 
 	JUMP main_program       ; Main loop	
 
-
+; Steps of the calculation
 step1:
 	; Check if number is valid (0-9)
 	CALL func_checkValidNum
@@ -301,13 +305,12 @@ step3:
 	JUMP increment_step
 
 step4:
-	; Must be equal operator
+	; Check if equal operator has been inputted
 	FETCH s0, SAVED_ASCII
 	COMPARE s0, 3D
 	JUMP NZ, error
 
-
-	; Equal operator inputted, output equals audio
+	; Equal operator has been inputted, output equal audio
 	CALL talkwordequals
 	
 	; Perform math operation of NUM1 (+/-) NUM2
@@ -321,7 +324,7 @@ step4:
 	XOR s0, FF
 	ADD s0, 01
 	
-	; Store saved value, say minus, then fetch
+	; Store saved value to scratch, say minus, then fetch
 	STORE s0, SAVED_NUM
 	CALL talkwordminus
 	FETCH s0, SAVED_NUM
@@ -330,7 +333,7 @@ outputSum:
 	; Output sum to audio
 	CALL func_numberToSpeech
 	
-	; Reset s4 (step) to step 1
+	; Reset s4 (STEP) to step 1 and finish
 	LOAD s4, 00
 	JUMP finish
 
@@ -360,6 +363,7 @@ invalidNum:
 
 ; Check Valid Operator
 ; checks if input is valid + or -
+; s0 is 0 for invalid, 1 for valid
 func_checkValidOperator:
 	FETCH s0, SAVED_ASCII
 	COMPARE s0, 2B ; +
@@ -375,7 +379,7 @@ validOperator:
 
 ; Number To Speech
 ; s0 is input, outputs number as audio if valid
-; tried making a jump table but label address can't be accessed with this architecture
+; tried making a jump table but the label address can't be directly accessed with this architecture
 ; would've worked on the PicoBlaze-6 with the load s0, label'lower
 func_numberToSpeech:
 	COMPARE s0, 00
@@ -419,23 +423,6 @@ func_numberToSpeech:
 
 	JUMP talkworderror
 
-; Math Operation
-; Calculates sum of s1 and s2
-; Chooses addition or subtraction based on operator in s3
-func_mathOperation:
-	COMPARE S3, 2B
-	JUMP NZ, subtraction
-
-addition:
-	LOAD s0, s1
-	ADD s0, s2
-	RETURN
-
-subtraction:
-	LOAD s0, s1
-	SUB s0, s2
-	RETURN
-
 ; Ascii To Speech
 ; s0 is input, outputs operator as audio if valid
 asciiToSpeech:
@@ -445,6 +432,22 @@ asciiToSpeech:
 	JUMP Z, talkwordminus
 
 	JUMP talkworderror
+
+; Math Operation
+; Calculates sum of s1 and s2
+; Chooses addition or subtraction based on operator in s3
+func_mathOperation:
+	LOAD s0, s1
+	COMPARE s3, 2B
+	JUMP NZ, subtraction
+
+addition:
+	ADD s0, s2
+	RETURN
+
+subtraction:
+	SUB s0, s2
+	RETURN
 
 ;;============================================================================
 ;; Test message and phoneme voicing subroutine.
@@ -618,26 +621,25 @@ endword:
 	call	talkphonemePA5
 	return
 
-    say_phoneme:  
-	 			; set port to phoneme code
-				OUTPUT s0, PHONEME_OUT_PORT 
+say_phoneme:  
+			; Set phoneme out phoneme_out_port to current phoneme 
+			OUTPUT s0, PHONEME_OUT_PORT 
 
-				; reset finish edge_trap
-				; Start audio FSM
-				LOAD s0, 03 
-				OUTPUT s0, FSM_OUT_PORT 
+			; Reset finish edgetrap and start audio_fsm eg FSM_OUT_PORT[1:0] = 2'b11
+			LOAD s0, 03 
+			OUTPUT s0, FSM_OUT_PORT 
 
-				; Reset start signal
-				LOAD s0, 00 
-				OUTPUT s0, FSM_OUT_PORT 
+			; Reset FSM_OUT_PORT
+			LOAD s0, 00 
+			OUTPUT s0, FSM_OUT_PORT 
+
+; Loop until finish signal has been issued by the audio_fsm in FSM_IN_PORT[1]
+waitForAudio: 
+			INPUT s0, FSM_IN_PORT
+			TEST s0, 01 
+			JUMP Z, waitForAudio 
 	
-	; loop until finished
-	waitForAudio: 
-				INPUT s0, FSM_IN_PORT
-				TEST s0, 01 ; Check first bit
-				JUMP Z, waitForAudio ; if zero, bit is not set and repeat loop
- 	 
-                RETURN
+			RETURN
 
 
 talkphonemeAA:			; hOt
