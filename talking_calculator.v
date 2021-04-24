@@ -325,17 +325,9 @@ audio_ctrl audioControl(
   .address          (flash_mem_address),
   .start_address    (audio_start_address),
   .end_address      (audio_end_address),
+  .silent           (decoded_silent),
   .start            (audio_controller_start),
   .finish           (audio_controller_finish)
-);
-
-// Silent signal stops audio output
-// Uses signals passed through 8b10b encoder/decoder
-mux2_1 #(8) audio_output_mux(
-  .a0       (decoded_audio), 
-  .a1       (8'd0), 
-  .select   (decoded_silent), 
-  .out      (audio_data)
 );
 
 // EDGE TRAPS
@@ -406,7 +398,7 @@ decoder_8b10b decode_audio (
   .RBYTECLK     (CLK_50M),
   .tbi          (encoded_audio),
   .K_out        (decoded_silent),
-  .ebi          (decoded_audio),
+  .ebi          (audio_data),
   .coding_err   (),
   .disparity    (),
   .disparity_err()

@@ -45,10 +45,11 @@ module audio_ctrl_tb();
     logic getNewData;
     logic [22:0] address;
     logic [23:0] start_address, end_address;
+    logic silent;
     logic start;
     logic finish;
 
-    audio_ctrl DUT (clk, sample_clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+    audio_ctrl DUT (clk, sample_clk, reset, inData, audioData, getNewData, address, start_address, end_address, silent, start, finish);
 
     // Rom is treated as flash control eg. getNewData
     ROM EPCS128_flash(address, getNewData, inData);
@@ -70,7 +71,7 @@ module audio_ctrl_tb();
     end
 
     initial begin
-        start_address = 24'd403; end_address = 24'd411; reset = 1'b0;  start = 1'b0;
+        start_address = 24'd403; end_address = 24'd411; reset = 1'b0;  start = 1'b0; silent = 1'b0;
         #10;
         reset = 1'b1; #5;
         reset = 1'b0; #5;
@@ -78,10 +79,13 @@ module audio_ctrl_tb();
         start = 1'b0; #10;
         #90;
         // Finished first audio, feed new one
-        start_address = 24'd2548; end_address = 24'd2555;
+        start_address = 24'd2548; end_address = 24'd2559;
         start = 1'b1; #10;
         start = 1'b0; #10;
-        #100;
+        #20;
+        silent = 1'b1; #20;
+        silent = 1'b0; 
+        #150;
 
         $stop();
     end
@@ -143,7 +147,7 @@ module ROM(address, clock, q);
     assign mem[102] = {8'd11, 8'd10, 8'd9, 8'd8};
 
     // Second phoneme
-    // Byte address 2548 - 2555
+    // Byte address 2548 - 2559
     // Word address 637 - 693
     assign mem[637] = {8'd15, 8'd14, 8'd13, 8'd12};
     assign mem[638] = {8'd19, 8'd18, 8'd17, 8'd16};
