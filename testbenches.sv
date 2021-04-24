@@ -39,7 +39,7 @@ module volume_fsm_tb();
 endmodule
 
 module audio_ctrl_tb();
-    logic clk, reset;
+    logic clk, sample_clk, reset;
     logic [31:0] inData;
     logic [7:0] audioData;
     logic getNewData;
@@ -48,16 +48,24 @@ module audio_ctrl_tb();
     logic start;
     logic finish;
 
-    audio_ctrl DUT (clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+    audio_ctrl DUT (clk, sample_clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
 
     // Rom is treated as flash control eg. getNewData
     ROM EPCS128_flash(address, getNewData, inData);
+    
+    initial begin
+        sample_clk = 1'b1; #5;
+        forever begin
+            sample_clk = 1'b0; #5;
+            sample_clk = 1'b1; #5;
+        end
+    end
 
     initial begin
-        clk = 1'b1; #5;
+        clk = 1'b1; #1;
         forever begin
-            clk = 1'b0; #5;
-            clk = 1'b1; #5;
+            clk = 1'b0; #1;
+            clk = 1'b1; #1;
         end
     end
 
@@ -68,8 +76,7 @@ module audio_ctrl_tb();
         reset = 1'b0; #5;
         start = 1'b1; #10;
         start = 1'b0; #10;
-        #100;
-        #20;
+        #90;
         // Finished first audio, feed new one
         start_address = 24'd2548; end_address = 24'd2555;
         start = 1'b1; #10;

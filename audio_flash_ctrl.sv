@@ -50,8 +50,8 @@ endmodule
 
 // Takes 32-bit audio data and outputs samples from byte addresses 
 // start_address to end_address which are read from flash using the getNewData signal
-module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
-    input   logic           clk, reset;
+module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+    input   logic           clk, sample_rate_clk, reset;
     input   logic [31:0]    inData;                     // Data from flash controller
     output  logic [7:0]     audioData;                  // Audio to output
     output  logic           getNewData;                 // Signal flash to read new data from flash
@@ -65,7 +65,8 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
 
     parameter idle = 3'b00_1;   
     parameter playback = 3'b01_0;
-    parameter data_buffer = 3'b11_0;
+    parameter data_buffer = 3'b10_0;
+    parameter timing_buffer = 3'b11_0;
 
     assign finish = state[0]; 
 
@@ -73,6 +74,9 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
     // Single pulse edge capture on start signal
     logic synced_start;
     single_pulse_edgeTrap startTrap(clk, start, synced_start);
+
+    logic synced_sample_clk;
+    single_pulse_edgeTrap clkTrap(clk, sample_rate_clk, synced_sample_clk);
 
     // ADDRESS CONTROL LOGIC
     logic [23:0] byte_address; 
@@ -105,38 +109,41 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
             // Databuffer in case first byte is in 4th position
             data_buffer: begin 
                 state <= playback;
-                getNewData = 1'b0; 
+                getNewData <= 1'b0; 
             end
 
             playback: begin
-                // Sample to output depends on byte 
-                case (memory_position)
-                    2'd0:   audioData <= inData[7:0];
-                    2'd1:   audioData <= inData[15:8];
-                    2'd2:   audioData <= inData[23:16];
-                    2'd3:   audioData <= inData[31:24];
-                    default: audioData <= 8'd0;
-                endcase
+                if (synced_sample_clk) begin
+                    // Sample to output depends on byte 
+                    case (memory_position)
+                        2'd0:   audioData <= inData[7:0];
+                        2'd1:   audioData <= inData[15:8];
+                        2'd2:   audioData <= inData[23:16];
+                        2'd3:   audioData <= inData[31:24];
+                        default: audioData <= 8'd0;
+                    endcase
 
-                // Address assignment
-                byte_address <= byte_address + 24'd1;
-                address <= word_address + 24'd1; // While were on byte 3, read next flash address
+                    // Address assignment
+                    byte_address <= byte_address + 24'd1;
+                    address <= word_address + 24'd1; // While were on byte 3, read next flash address
 
-                // If were at the last address, finish
-                if (byte_address == end_address) begin
-                    state <= idle;
-                    getNewData <= 1'b0;
+                    // If were at the last address, finish
+                    if (byte_address == end_address) begin
+                        state <= timing_buffer;
+                        getNewData <= 1'b0;
+                    end
+
+                    // Otherwise if were at the last byte, read new flash data
+                    else if (memory_position == 3) begin 
+                        getNewData <= 1'b1;
+                    end
                 end
 
-                // Otherwise if were at the last byte, read new flash data
-                else if (memory_position == 3) begin 
-                    getNewData <= 1'b1;
-                end
-
-                else begin
-                    getNewData <= 1'b0;
-                end
+                else getNewData <= 1'b0;
             end
+
+            // Allow final audio sample to be ouputted for one sample clk cycle
+            timing_buffer: if (synced_sample_clk) state <= idle;
 
             default: state <= idle;
         endcase

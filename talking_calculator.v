@@ -316,7 +316,8 @@ wire audio_controller_start, audio_controller_finish;
 wire [23:0] audio_start_address, audio_end_address;
 
 audio_ctrl audioControl(
-  .clk            (Clock_7200Hz), 
+  .clk            (CLK_50M), 
+  .sample_rate_clk(Clock_7200Hz),
   .reset          (systemReset), 
   .inData         (memData), 
   .audioData      (audio_ctrl_data), 
