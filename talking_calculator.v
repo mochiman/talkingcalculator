@@ -330,11 +330,21 @@ audio_ctrl audioControl(
 );
 
 // Use decoded signals to select audio data and silence
+// Flipflop ensures audio data is only updated with the sample rate clock
+wire [7:0] next_audio_data;
+vDFFE #(8) out_audio_ff(
+  .clk(Clock_7200Hz), 
+  .reset(systemReset), 
+  .enable(1'b1), 
+  .d(next_audio_data), 
+  .q(audio_data)
+);
+
 mux2_1 #(8) silence_mux(
   .a0     (decoded_audio), 
   .a1     (8'd0), 
   .select (decoded_silent), 
-  .out    (audio_data)
+  .out    (next_audio_data)
 );
 
 // EDGE TRAPS
