@@ -9,13 +9,18 @@ module flash_ctrl(clk, reset, read, byteEnable, waitRequest, readData, readDataV
     input   logic [31:0]    readData;       // Data from memory
     input   logic           waitRequest;    // Indicates master must wait before sending more read requests
     input   logic           readDataValid;  // Indicates readData has valid data to be read by master
-    output  logic [31:0]    outData; // Output of read audio data
+    output  logic [31:0]    outData;        // Output of read audio data
     input   logic           start;          // Tells flashController to retrieve new data from next address
     output  logic           finish;         // Incicates flash controller is finished retrieving memory and is idling
 
     // DATA OUTPUT LOGIC
     logic enable_outData;
     vDFFE #(32) updateDataFF(clk, reset, enable_outData, readData, outData);
+
+    // SYNCHRONIZATION LOGIC
+    // Single pulse edge capture on start signal
+    logic synced_start;
+    single_pulse_edgeTrap start_trap(clk, start, synced_start);
 
     // STATES
     logic [4:0] state;
@@ -25,11 +30,6 @@ module flash_ctrl(clk, reset, read, byteEnable, waitRequest, readData, readDataV
 
     assign {enable_outData, read, finish} = state[2:0];
     assign byteEnable = 4'b1111; // 32 bits
-
-    // SYNCHRONIZATION LOGIC
-    // Single pulse edge capture on start signal
-    logic synced_start;
-    single_pulse_edgeTrap start_trap(clk, start, synced_start);
 
     always_ff @(posedge clk or posedge reset) begin
         if (reset) state <= idle;
@@ -52,41 +52,41 @@ endmodule
 // start_address to end_address which are read from flash using the getNewData signal
 module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
     input   logic           clk, reset;
-    input   logic [31:0]    inData;
-    output  logic [7:0]     audioData;
-    output  logic           getNewData;
-    output  logic [22:0]    address;
-    input   logic [23:0]    start_address, end_address;
+    input   logic [31:0]    inData;                     // Data from flash controller
+    output  logic [7:0]     audioData;                  // Audio to output
+    output  logic           getNewData;                 // Signal flash to read new data from flash
+    output  logic [22:0]    address;                    // Flash address to read (word_address)
+    input   logic [23:0]    start_address, end_address; // Start and end addresses (byte_address)
     input   logic           start;
     output  logic           finish;
 
     // STATE LOGIC
+    logic current_state, next_state;
+
     parameter idle = 1'b0;   
     parameter playback = 1'b1; 
-
-    logic current_state, next_state;
-    vDFFE #(1) stateFF(clk, reset, 1'b1, next_state, current_state);
 
     // SYNCHRONIZATION LOGIC
     // Sync the start signal to only posedge
     logic synced_start;
     single_pulse_edgeTrap startTrap(clk, start, synced_start);
 
-     // ADDRESS CONTROL LOGIC
-    logic enable_address;
+    // ADDRESS CONTROL LOGIC
     logic [23:0] current_byte_address, next_byte_address; 
-    vDFFE #(24) addressFF(clk, reset, 1'b1, next_byte_address, current_byte_address);
+    logic enable_address;
 
-    // ADDRESSING LOGIC
     logic [22:0] word_address;
     logic [1:0]  memory_position;
     assign word_address = current_byte_address / 24'd4;
     assign memory_position = current_byte_address % 24'd4;
 
-    // MEMORY LOGIC
-    // save value of inData only on clock pulse to sync with audio controller
+    // AUDIO DATA LOGIC
     logic [31:0] saved_audio_data;
     logic load_audio_data;
+
+    // FLIP FLOPS
+    vDFFE #(1)  stateFF(clk, reset, 1'b1, next_state, current_state);
+    vDFFE #(24) addressFF(clk, reset, 1'b1, next_byte_address, current_byte_address);
     vDFFE #(32) audio_data_ff(clk, reset, load_audio_data, inData, saved_audio_data);
 
     always_comb begin
