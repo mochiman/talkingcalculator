@@ -15,12 +15,12 @@ module flash_ctrl(clk, reset, read, byteEnable, waitRequest, readData, readDataV
 
     // DATA OUTPUT LOGIC
     logic enable_outData;
-    vDFFE #(32) updateDataFF(clk, reset, enable_outData, readData, outData);
+    vDFFE #(32) updateDataFF(.clk(clk), .reset(reset), .enable(enable_outData), .d(readData), .q(outData));
 
     // SYNCHRONIZATION LOGIC
     // Single pulse edge capture on start signal
     logic synced_start;
-    single_pulse_edgeTrap start_trap(clk, start, synced_start);
+    single_pulse_edgeTrap start_trap(.clk(clk), .in(start), .out(synced_start));
 
     // STATES
     logic [4:0] state;
@@ -73,10 +73,10 @@ module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, ad
     // SYNCHRONIZATION LOGIC
     // Single pulse edge capture on start signal
     logic synced_start;
-    single_pulse_edgeTrap startTrap(clk, start, synced_start);
+    single_pulse_edgeTrap startTrap(.clk(clk), .in(start), .out(synced_start));
 
     logic synced_sample_clk;
-    single_pulse_edgeTrap clkTrap(clk, sample_rate_clk, synced_sample_clk);
+    single_pulse_edgeTrap clkTrap(.clk(clk), .in(sample_rate_clk), .out(synced_sample_clk));
 
     // ADDRESS CONTROL LOGIC
     logic [23:0] byte_address; 
@@ -137,9 +137,9 @@ module audio_ctrl(clk, sample_rate_clk, reset, inData, audioData, getNewData, ad
                     else if (memory_position == 3) begin 
                         getNewData <= 1'b1;
                     end
-                end
 
-                else getNewData <= 1'b0;
+                    else getNewData <= 1'b0;
+                end
             end
 
             // Allow final audio sample to be ouputted for one sample clk cycle

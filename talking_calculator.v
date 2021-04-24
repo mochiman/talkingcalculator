@@ -316,22 +316,27 @@ wire audio_controller_start, audio_controller_finish;
 wire [23:0] audio_start_address, audio_end_address;
 
 audio_ctrl audioControl(
-  .clk            (CLK_50M), 
-  .sample_rate_clk(Clock_7200Hz),
-  .reset          (systemReset), 
-  .inData         (memData), 
-  .audioData      (audio_ctrl_data), 
-  .getNewData     (getNewData), 
-  .address        (flash_mem_address),
-  .start_address  (audio_start_address),
-  .end_address    (audio_end_address),
-  .start          (audio_controller_start),
-  .finish         (audio_controller_finish)
+  .clk              (CLK_50M), 
+  .sample_rate_clk  (Clock_7200Hz),
+  .reset            (systemReset), 
+  .inData           (memData), 
+  .audioData        (audio_ctrl_data), 
+  .getNewData       (getNewData), 
+  .address          (flash_mem_address),
+  .start_address    (audio_start_address),
+  .end_address      (audio_end_address),
+  .start            (audio_controller_start),
+  .finish           (audio_controller_finish)
 );
 
 // Silent signal stops audio output
 // Uses signals passed through 8b10b encoder/decoder
-mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
+mux2_1 #(8) audio_output_mux(
+  .a0       (decoded_audio), 
+  .a1       (8'd0), 
+  .select   (decoded_silent), 
+  .out      (audio_data)
+);
 
 // EDGE TRAPS
 // These edge traps are used to coordinate between the picoblaze and the FSMs
@@ -341,11 +346,21 @@ mux2_1 #(8) audio_output_mux(decoded_audio, 8'd0, decoded_silent, audio_data);
 
 // New keyboard data signal for pico start
 wire pico_finish, pico_start;
-edge_trap pico_start_char(CLK_50M, pico_finish, kbd_data_ready, pico_start);
+edge_trap pico_start_char(
+  .clk      (CLK_50M), 
+  .reset    (pico_finish), 
+  .in       (kbd_data_ready), 
+  .out      (pico_start)
+);
 
 // Audio controller finish signal
 wire synced_finish, reset_edge_trap;
-edge_trap finish_signal_trap(CLK_50M, reset_edge_trap, audio_controller_finish, synced_finish);
+edge_trap finish_signal_trap(
+  .clk      (CLK_50M), 
+  .reset    (reset_edge_trap), 
+  .in       (audio_controller_finish), 
+  .out      (synced_finish)
+);
 
 // NARRATOR CONTROLLER
 narrator_ctrl phonemeSelector
@@ -369,25 +384,31 @@ wire [7:0] audio_ctrl_data, audio_to_encode, encoded_audio, decoded_audio;
 // send character 28.5 through encoder/decoder to get decoded_silent from
 // output_K output of 8b10b decoder
 parameter control_character = 8'b10111100;
-mux2_1 #(8) control_character_mux(audio_ctrl_data, control_character, silent, audio_to_encode);
+
+mux2_1 #(8) control_character_mux(
+  .a0     (audio_ctrl_data), 
+  .a1     (control_character), 
+  .select (silent), 
+  .out    (audio_to_encode)
+);
 
 encoder_8b10b encode_audio (
-  .reset(systemReset),
-  .SBYTECLK(CLK_50M),
-  .K(silent),
-  .ebi(audio_to_encode),
-  .tbi(encoded_audio),
+  .reset    (systemReset),
+  .SBYTECLK (CLK_50M),
+  .K        (silent),
+  .ebi      (audio_to_encode),
+  .tbi      (encoded_audio),
   .disparity()
 );
 
 decoder_8b10b decode_audio (
-  .reset(systemReset),
-  .RBYTECLK(CLK_50M),
-  .tbi(encoded_audio),
-  .K_out(decoded_silent),
-  .ebi(decoded_audio),
-  .coding_err(),
-  .disparity(),
+  .reset        (systemReset),
+  .RBYTECLK     (CLK_50M),
+  .tbi          (encoded_audio),
+  .K_out        (decoded_silent),
+  .ebi          (decoded_audio),
+  .coding_err   (),
+  .disparity    (),
   .disparity_err()
 );
 
@@ -397,12 +418,12 @@ decoder_8b10b decode_audio (
 // audio playback clock indicating new sample
 // needs to be read
 volume_fsm led_volume_output(
-  .clk(CLK_50M), 
-  .reset(systemReset), 
-  .sample(audio_ctrl_data), 
-  .outVolume(LED[9:2]), 
-  .start(Clock_7200Hz), 
-  .finish()
+  .clk        (CLK_50M), 
+  .reset      (systemReset), 
+  .sample     (audio_ctrl_data), 
+  .outVolume  (LED[9:2]), 
+  .start      (Clock_7200Hz), 
+  .finish     ()
 );
 
 

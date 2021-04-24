@@ -19,21 +19,21 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
 
     // ABSOLUTE VALUE LOGIC
     logic [7:0] sample_abs_value;
-    absolute_value #(8) get_sample_abs_value(sample, sample_abs_value);
+    absolute_value #(8) get_sample_abs_value(.in(sample), .out(sample_abs_value));
 
     // SUMMATION AND AVERAGING LOGIC
     logic average_sum;
     assign next_sample_sum = average_sum ? (sample_sum >> 8) : (sample_sum + sample_abs_value);
 
     // COUNTER LOGIC
-    counter #(.width(8), .increment(1), .min(0), .max(255)) sample_counter(1'b0, sample_count, next_sample_count);
+    counter #(.width(8), .increment(1), .min(0), .max(255)) sample_counter(.control(1'b0), .current_count(sample_count), .next_count(next_sample_count));
 
     // VOLUME OUTPUT LOGIC
-    sum_to_volume volumeOut(sample_sum[7:0], next_volume);
+    sum_to_volume volumeOut(.sum(sample_sum[7:0]), .volume(next_volume));
 
     // SYNCHRONIZATION LOGIC
     logic synced_start;
-    single_pulse_edgeTrap start_trap(clk, start, synced_start);
+    single_pulse_edgeTrap start_trap(.clk(clk), .in(start), .out(synced_start));
 
     // STATE LOGIC
     // 4 states represented by 2 bits and control signals in trailing 5 bits
@@ -47,9 +47,9 @@ module volume_fsm(clk, reset, sample, outVolume, start, finish);
     assign {load_sample_sum, load_sample_count, load_volume, average_sum, finish} = current_state[4:0];
 
     // FLIP FLOPS
-    vDFFE #(16) sample_sum_FF   (clk,   reset,    load_sample_sum,      next_sample_sum,    sample_sum);
-    vDFFE #(8)  sample_count_FF (clk,   reset,    load_sample_count,    next_sample_count,  sample_count);
-    vDFFE #(8)  volume_FF       (clk,   reset,    load_volume,          next_volume,        outVolume);
+    vDFFE #(16) sample_sum_FF   (.clk(clk),   .reset(reset),    .enable(load_sample_sum),      .d(next_sample_sum),    .q(sample_sum));
+    vDFFE #(8)  sample_count_FF (.clk(clk),   .reset(reset),    .enable(load_sample_count),    .d(next_sample_count),  .q(sample_count));
+    vDFFE #(8)  volume_FF       (.clk(clk),   .reset(reset),    .enable(load_volume),          .d(next_volume),        .q(outVolume));
 
     // State machine with asynchronous reset
     always_ff @(posedge clk or posedge reset) begin

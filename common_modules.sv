@@ -1,30 +1,30 @@
 `default_nettype none
 
 // Counter with controllable min and max
-// Counts up or down based on controlPC, 0 = up, 1 = down
+// Counts up or down based on control, 0 = up, 1 = down
 // Resets to min when counting up and reaching max value, 
 // resets to max when counting down and reaching min value
-module counter(controlPC, current_pc, next_pc);
+module counter(control, current_count, next_count);
     parameter width = 32;
     parameter increment = 'd1;
     parameter min = 'd0;
     parameter max = 'h7FFFF;
 
-    input logic controlPC; // First bit for reset, second bit for direction
-    input logic [width-1:0] current_pc;
-    output logic [width-1:0] next_pc;
+    input logic control; // First bit for reset, second bit for direction
+    input logic [width-1:0] current_count;
+    output logic [width-1:0] next_count;
 
     always_comb begin
-        case (controlPC)
+        case (control)
             1'b0: begin
-                if (current_pc == max) next_pc = min;
-                else next_pc = current_pc + increment;
+                if (current_count == max) next_count = min;
+                else next_count = current_count + increment;
             end
             1'b1: begin
-                if (current_pc == min) next_pc = max;
-                else next_pc = current_pc - increment;
+                if (current_count == min) next_count = max;
+                else next_count = current_count - increment;
             end
-            default: next_pc = current_pc;
+            default: next_count = current_count;
         endcase
     end
 endmodule
