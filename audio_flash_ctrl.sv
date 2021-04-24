@@ -24,9 +24,9 @@ module flash_ctrl(clk, reset, read, byteEnable, waitRequest, readData, readDataV
 
     // STATES
     logic [4:0] state;
-    parameter idle          = 4'b00_001;
-    parameter sendRead      = 4'b01_010;
-    parameter waitForData   = 4'b10_100;
+    parameter idle          = 5'b00_001;
+    parameter sendRead      = 5'b01_010;
+    parameter waitForData   = 5'b10_100;
 
     assign {enable_outData, read, finish} = state[2:0];
     assign byteEnable = 4'b1111; // 32 bits
@@ -61,10 +61,11 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
     output  logic           finish;
 
     // STATE LOGIC
-    logic [1:0] state;
+    logic [2:0] state = 3'b00_1;
 
-    parameter idle = 2'b0_1;   
-    parameter playback = 2'b1_0;
+    parameter idle = 3'b00_1;   
+    parameter playback = 3'b01_0;
+    parameter data_buffer = 3'b11_0;
 
     assign finish = state[0]; 
 
@@ -87,18 +88,24 @@ module audio_ctrl(clk, reset, inData, audioData, getNewData, address, start_addr
             idle: begin
                 // Idling
                 byte_address <= start_address;  
-                address <= start_address % 24'd4;
+                address <= start_address / 24'd4;
                 audioData <= 8'd0; 
 
                 // Start signal recieved, load new audio from flash
                 if (synced_start) begin 
-                    state <= playback;
+                    state <= data_buffer;
                     getNewData <= 1'b1; 
                 end
 
                 else begin
                     getNewData = 1'b0; 
                 end
+            end
+
+            // Databuffer in case first byte is in 4th position
+            data_buffer: begin 
+                state <= playback;
+                getNewData = 1'b0; 
             end
 
             playback: begin

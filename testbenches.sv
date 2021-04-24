@@ -1,3 +1,5 @@
+`default_nettype none
+
 module volume_fsm_tb();
     logic clk, reset;
     logic [7:0] sample;
@@ -18,15 +20,15 @@ module volume_fsm_tb();
     initial begin
         start = 1'b0; #40;
         forever begin
-            start = 1'b1; #5;
-            start = 1'b0; #5;
+            start = 1'b1; #10;
+            start = 1'b0; #10;
         end
     end
 
     initial begin
         reset = 1'b1; #10;
         reset = 1'b0; #10;
-        sample = 8'b10000001;
+        sample = 8'b11000010;
         #20;
         #5000;
         #1000;
@@ -36,20 +38,60 @@ module volume_fsm_tb();
     end
 endmodule
 
-module audioController_tb();
+module audio_ctrl_tb();
     logic clk, reset;
     logic [31:0] inData;
     logic [7:0] audioData;
     logic getNewData;
-    logic [23:0] address;
+    logic [22:0] address;
     logic [23:0] start_address, end_address;
-    logic silent;
     logic start;
     logic finish;
 
-    audioController DUT (clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+    audio_ctrl DUT (clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
 
-    ROM testFlash(address, getNewData, inData);
+    // Rom is treated as flash control eg. getNewData
+    ROM EPCS128_flash(address, getNewData, inData);
+
+    initial begin
+        clk = 1'b1; #5;
+        forever begin
+            clk = 1'b0; #5;
+            clk = 1'b1; #5;
+        end
+    end
+
+    initial begin
+        start_address = 24'd403; end_address = 24'd411; reset = 1'b0;  start = 1'b0;
+        #10;
+        reset = 1'b1; #5;
+        reset = 1'b0; #5;
+        start = 1'b1; #10;
+        start = 1'b0; #10;
+        #100;
+        #20;
+        // Finished first audio, feed new one
+        start_address = 24'd2548; end_address = 24'd2555;
+        start = 1'b1; #10;
+        start = 1'b0; #10;
+        #100;
+
+        $stop();
+    end
+endmodule
+
+module flash_ctrl_tb();
+    logic           clk, reset;    
+    logic           read;          
+    logic [3:0]     byteEnable;   
+    logic [31:0]    readData;      
+    logic           waitRequest;    
+    logic           readDataValid;
+    logic [31:0]    outData;       
+    logic           start;      
+    logic           finish;        
+
+    flash_ctrl DUT(clk, reset, read, byteEnable, waitRequest, readData, readDataValid, outData, start, finish);
 
     initial begin
         clk = 1'b0; #5;
@@ -60,77 +102,48 @@ module audioController_tb();
     end
 
     initial begin
-        start_address = 24'd27; end_address = 24'd35; reset = 1'b1;  start = 1'b0; silent = 1'b0;
+        reset = 1'b1; waitRequest = 1'b0; readDataValid = 1'b0; start = 1'b0; readData = 32'd123456789;
         #10;
-        reset = 1'b0; #10;
-        start = 1'b1; #10;
-        start = 1'b0; #10;
-        #100;
+        reset = 1'b0;
+        #10;
         start = 1'b1;
         #10;
         start = 1'b0;
+        #50;
+        readDataValid = 1'b1; #10;
         #50;
 
         $stop();
     end
 endmodule
 
+module ROM(address, clock, q);
+    parameter ADDR_WIDTH = 23;
+    parameter DATA_WIDTH = 32;
+    parameter DEPTH = 700;
 
-module flashController_tb();
-    logic clk, reset;
-    logic [31:0] inData;
-    logic [7:0] audioData;
-    logic getNewData;
-    logic [23:0] address;
-    logic [23:0] start_address, end_address;
-    logic silent;
-    logic start;
-    logic finish;
+    input logic [ADDR_WIDTH - 1:0] address;
+    input logic clock;
+    output reg [DATA_WIDTH - 1:0] q;
 
-    audioController DUT (clk, reset, inData, audioData, getNewData, address, start_address, end_address, start, finish);
+    wire [DATA_WIDTH - 1:0] mem [0:DEPTH-1];
 
-    ROM testFlash(address, getNewData, inData);
+    // First phoneme
+    // Word address 100-102
+    // Byte address 400 - 412
+    assign mem[100] = {8'd3, 8'd2, 8'd1, 8'd0};
+    assign mem[101] = {8'd7, 8'd6, 8'd5, 8'd4};
+    assign mem[102] = {8'd11, 8'd10, 8'd9, 8'd8};
 
-    initial begin
-        clk = 1'b0; #5;
-        forever begin
-            clk = 1'b1; #5;
-            clk = 1'b0; #5;
-        end
+    // Second phoneme
+    // Byte address 2548 - 2555
+    // Word address 637 - 693
+    assign mem[637] = {8'd15, 8'd14, 8'd13, 8'd12};
+    assign mem[638] = {8'd19, 8'd18, 8'd17, 8'd16};
+    assign mem[639] = {8'd23, 8'd22, 8'd21, 8'd20};
+
+    always @(posedge clock) begin
+        q <= mem[address];
     end
-
-    initial begin
-        start_address = 24'd27; end_address = 24'd35; reset = 1'b1;  start = 1'b0; silent = 1'b0;
-        #10;
-        reset = 1'b0; #10;
-        start = 1'b1; #10;
-        start = 1'b0; #10;
-        #100;
-        start = 1'b1;
-        #10;
-        start = 1'b0;
-        #50;
-
-        $stop();
-    end
-endmodule
-
-// Flash storage simulation of the EPCS128 
-module EPCS128_flash(clk, address, q);
-    input [22:0] address;
-    input clock;
-    output reg [31:0] q;
-
-    // Corresponds to byte address 
-    always_comb begin
-        case (address) 
-        24'd625: q = {8'd4, 8'd3, 8'd2, 8'd1};
-        24'd626: q = {8'd8, 8'd7, 8'd6, 8'd5};
-        24'd627: q = {8'd12, 8'd11, 8'd10, 8'd9};
-        24'd628: q = {8'd16, 8'd15, 8'd14, 8'd13};
-        default: q = 32'dx;
-
-        endcase
-    end 
     
 endmodule

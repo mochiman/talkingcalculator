@@ -230,7 +230,7 @@ wire systemReset = 1'b0; // Unused, could assign to something
 
 // SPEED CONTROLLER
 wire [31:0] divisor;
-speed_controller speedControl(
+speed_ctrl speedControl(
   .clk            (CLK_50M), 
   .speedUp        (speed_up_event), 
   .speedDown      (speed_down_event), 
@@ -245,7 +245,7 @@ clockdivider32 clock22(
 );
 
 // FLASH CONTROLLER
-flash_controller memoryControl(
+flash_ctrl memoryControl(
   .clk            (CLK_50M), 
   .reset          (systemReset), 
   .read           (flash_mem_read), 
@@ -315,7 +315,7 @@ picoblaze_template_inst(
 wire audio_controller_start, audio_controller_finish;
 wire [23:0] audio_start_address, audio_end_address;
 
-audio_controller audioControl(
+audio_ctrl audioControl(
   .clk            (Clock_7200Hz), 
   .reset          (systemReset), 
   .inData         (memData), 
