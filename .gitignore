@@ -17,6 +17,7 @@
 !simple_ipod_solution.v
 !pacoblaze_instruction_memory.v
 !picoblaze_template.v
+!talking_calculator.v
 db/
 incremental_db/
 pacoblaze/
